@@ -1,6 +1,6 @@
-"""Minimal traced agent used by CI to smoke-test the agentdbg-assert action."""
+"""Minimal traced agent used by CI to smoke-test the Maida assert action."""
 
-from agentdbg import trace, record_tool_call, record_llm_call
+from maida import trace, record_tool_call, record_llm_call
 
 
 @trace(name="ci_dummy_agent")

@@ -34,6 +34,6 @@ jobs:
       - uses: ./
         with:
           agent-script: examples/ci_dummy_agent.py
-          policy: .agentdbg/policy.yaml
-          agentdbg-version: '@main'
+          policy: .maida/policy.yaml
+          maida-version: '@main'
           post-comment: 'true'

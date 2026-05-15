@@ -1,5 +1,5 @@
-name: 'AgentDbg Assert'
-description: 'Run AgentDbg behavioral regression checks on agent traces'
+name: 'Maida Assert'
+description: 'Run Maida behavioral regression checks on agent traces'
 inputs:
   agent-script:
     description: 'Python script that runs the agent (must use @trace)'
@@ -9,12 +9,12 @@ inputs:
     required: false
     default: ''
   policy:
-    description: 'Path to policy YAML file. The policy is only applied if the file exists.'
+    description: 'Path to policy YAML file.'
     required: false
-    default: '.agentdbg/policy.yaml'
-  agentdbg-version:
+    default: '.maida/policy.yaml'
+  maida-version:
     description: |
-      AgentDbg version to use.
+      Maida version to use.
       Could be a version number starting with 'v' or a branch name starting with '@'.
       If a github identifier starts with 'v', use '@' prefix.
       Otherwise PyPI will be used.
@@ -26,7 +26,7 @@ inputs:
     required: false
     default: '3.12'
   extra-args:
-    description: 'Additional arguments to pass to agentdbg assert'
+    description: 'Additional arguments to pass to maida assert'
     required: false
     default: ''
   post-comment:
@@ -60,35 +60,35 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Install AgentDbg
+    - name: Install Maida
       env:
-        AGENTDBG_REPO: 'https://github.com/RefineHQ-AI/agentdbg.git'
-        AGENTDBG_VERSION: '${{ inputs.agentdbg-version }}'
+        MAIDA_REPO: 'https://github.com/maida-ai/maida.git'
+        MAIDA_VERSION: '${{ inputs.maida-version }}'
       shell: bash
       run: |
-        if [[ "${AGENTDBG_VERSION}" == "@"* ]]; then
+        if [[ "${MAIDA_VERSION}" == "@"* ]]; then
           # GitHub identifier
-          pip install git+${AGENTDBG_REPO}${AGENTDBG_VERSION}
-        elif [[ "${AGENTDBG_VERSION}" == "v"* ]]; then
+          python -m pip install "git+${MAIDA_REPO}${MAIDA_VERSION}"
+        elif [[ "${MAIDA_VERSION}" == "v"* ]]; then
           # PyPI version number
-          pip install "agentdbg==${AGENTDBG_VERSION:1}"
+          python -m pip install "maida==${MAIDA_VERSION:1}"
         else
           # Let's not allow any other values
-          echo "Invalid agentdbg-version: ${AGENTDBG_VERSION}."
-          echo "AgentDbg version must start with 'v' for PyPI version number"
+          echo "Invalid maida-version: ${MAIDA_VERSION}."
+          echo "Maida version must start with 'v' for PyPI version number"
           echo "or '@' for GitHub identifier."
           exit 10
         fi
 
     - name: Run agent
       shell: bash
-      run: python ${{ inputs.agent-script }}
+      run: python "${{ inputs.agent-script }}"
 
     - name: Get latest run ID
       shell: bash
       id: get-run
       run: |
-        RUN_ID=$(agentdbg list --json | python -c "import sys,json; data=json.load(sys.stdin); print(data['runs'][0]['run_id'] if data.get('runs') else '')")
+        RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); print(data['runs'][0]['run_id'] if data.get('runs') else '')")
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
     - name: Run assertions
@@ -105,19 +105,19 @@ runs:
         if [ -n "${{ inputs.extra-args }}" ]; then
           ARGS="$ARGS ${{ inputs.extra-args }}"
         fi
-        agentdbg assert ${{ steps.get-run.outputs.run_id }} $ARGS --format markdown > agentdbg-report.md || echo "assert_failed=true" >> $GITHUB_OUTPUT
+        maida assert ${{ steps.get-run.outputs.run_id }} $ARGS --format markdown > maida-report.md || echo "assert_failed=true" >> $GITHUB_OUTPUT
 
     - name: Show PR comment in the action log
       shell: bash
       run: |
-        cat agentdbg-report.md
+        cat maida-report.md
 
     - name: Post PR comment if possible
       if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
       continue-on-error: true
       uses: marocchino/sticky-pull-request-comment@v3.0.4
       with:
-        path: agentdbg-report.md
+        path: maida-report.md
 
     - name: Fail if assertions failed
       shell: bash
