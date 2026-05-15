@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v1
+      - uses: maida-ai/maida-assert@v2
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v1
+      - uses: maida-ai/maida-assert@v2
         with:
           agent-script: my_agent.py
 ```
@@ -79,12 +79,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v1
+      - uses: maida-ai/maida-assert@v2
         with:
           agent-script: examples/my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
-          maida-version: v0.2.1
+          maida-version: v0.3.2
           python-version: '3.11'
           extra-args: --max-steps 20 --max-tool-calls 10
 ```
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v1
+      - uses: maida-ai/maida-assert@v2
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
