@@ -118,6 +118,8 @@ runs:
       uses: marocchino/sticky-pull-request-comment@v3.0.4
       with:
         path: maida-report.md
+        hide_and_recreate: true
+        hide_classify: "OUTDATED"
 
     - name: Fail if assertions failed
       shell: bash
