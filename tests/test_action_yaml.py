@@ -45,6 +45,17 @@ def test_no_broken_baseline_generation_step():
         assert step.get("name") != "Create baseline if not provided"
 
 
+def test_get_latest_run_accepts_otel_trace_id():
+    steps = _load_action()["runs"]["steps"]
+    get_run_step = next(
+        step for step in steps if step.get("id") == "get-run"
+    )
+    script = get_run_step["run"]
+    assert ".get('trace_id')" in script
+    assert ".get('run_id')" in script
+    assert "No Maida run found" in script
+
+
 def test_public_files_use_current_branding():
     forbidden = (
         "Agent" + "Dbg",

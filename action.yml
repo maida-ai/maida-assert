@@ -88,8 +88,12 @@ runs:
       shell: bash
       id: get-run
       run: |
-        RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); print(data['runs'][0]['run_id'] if data.get('runs') else '')")
-        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); runs=data.get('runs') or []; run=runs[0] if runs else {}; print(run.get('trace_id') or run.get('run_id') or '')")
+        if [ -z "$RUN_ID" ]; then
+          echo "No Maida run found. Ensure agent-script records a traced run with @trace or traced_run()."
+          exit 3
+        fi
+        echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
     - name: Run assertions
       shell: bash
@@ -105,7 +109,7 @@ runs:
         if [ -n "${{ inputs.extra-args }}" ]; then
           ARGS="$ARGS ${{ inputs.extra-args }}"
         fi
-        maida assert ${{ steps.get-run.outputs.run_id }} $ARGS --format markdown > maida-report.md || echo "assert_failed=true" >> $GITHUB_OUTPUT
+        maida assert "${{ steps.get-run.outputs.run_id }}" $ARGS --format markdown > maida-report.md || echo "assert_failed=true" >> $GITHUB_OUTPUT
 
     - name: Show PR comment in the action log
       shell: bash

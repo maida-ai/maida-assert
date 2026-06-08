@@ -141,7 +141,7 @@ same command the action runs:
 uv add maida
 
 python my_agent.py
-RUN_ID=$(maida list --json | python -c "import sys,json; print(json.load(sys.stdin)['runs'][0]['run_id'])")
+RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); run=(data.get('runs') or [{}])[0]; print(run.get('trace_id') or run.get('run_id') or '')")
 
 maida assert "$RUN_ID" \
   --baseline baselines/my_agent.json \
