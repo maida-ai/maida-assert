@@ -56,6 +56,22 @@ def test_get_latest_run_accepts_otel_trace_id():
     assert "No Maida run found" in script
 
 
+def test_pypi_install_uses_maida_ai_package():
+    steps = _load_action()["runs"]["steps"]
+    install_step = next(
+        step for step in steps if step.get("name") == "Install Maida"
+    )
+    script = install_step["run"]
+    assert "maida-ai==${MAIDA_VERSION:1}" in script
+    assert "maida==${MAIDA_VERSION:1}" not in script
+
+
+def test_readme_uses_maida_ai_package_for_local_install():
+    readme = (REPO_ROOT / "README.md").read_text()
+    assert "uv add maida-ai" in readme
+    assert "uv add maida\n" not in readme
+
+
 def test_public_files_use_current_branding():
     forbidden = (
         "Agent" + "Dbg",

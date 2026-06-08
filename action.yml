@@ -71,7 +71,7 @@ runs:
           python -m pip install "git+${MAIDA_REPO}${MAIDA_VERSION}"
         elif [[ "${MAIDA_VERSION}" == "v"* ]]; then
           # PyPI version number
-          python -m pip install "maida==${MAIDA_VERSION:1}"
+          python -m pip install "maida-ai==${MAIDA_VERSION:1}"
         else
           # Let's not allow any other values
           echo "Invalid maida-version: ${MAIDA_VERSION}."

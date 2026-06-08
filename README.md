@@ -35,7 +35,7 @@ Your `agent-script` must instrument the agent with `@trace` or
 | `agent-script` | yes | — | Path to the Python script that runs the agent. The script must use `@trace` or `traced_run()` so a run is recorded. |
 | `baseline` | no | `''` | Path to a baseline JSON file produced by `maida baseline`. If omitted, only the policy is enforced. |
 | `policy` | no | `.maida/policy.yaml` | Path to a policy YAML file. |
-| `maida-version` | no | `@main` | Version of `maida` to install. Use `v<version>` to install from PyPI (e.g. `v0.2.1`) or `@<ref>` to install from the [`maida`](https://github.com/maida-ai/maida) repo (branch, tag, or commit, e.g. `@main`). |
+| `maida-version` | no | `@main` | Version of Maida to install. Use `v<version>` to install the `maida-ai` PyPI package (e.g. `v0.2.1`) or `@<ref>` to install from the [`maida`](https://github.com/maida-ai/maida) repo (branch, tag, or commit, e.g. `@main`). |
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
 | `extra-args` | no | `''` | Additional CLI arguments forwarded to `maida assert` (e.g. `--max-steps 20 --no-loops`). CLI flags override policy values. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
@@ -134,11 +134,11 @@ policy file.
 
 ## Running `maida assert` locally
 
-For a quick local check before pushing, install `maida` and run the
+For a quick local check before pushing, install the `maida-ai` package and run the
 same command the action runs:
 
 ```bash
-uv add maida
+uv add maida-ai
 
 python my_agent.py
 RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); run=(data.get('runs') or [{}])[0]; print(run.get('trace_id') or run.get('run_id') or '')")
