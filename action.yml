@@ -19,6 +19,8 @@ inputs:
       If a github identifier starts with 'v', use '@' prefix.
       Otherwise PyPI will be used.
       Default is "@main".
+      Note: this action relies on `maida assert` defaulting to the latest
+      run, which requires a Maida release newer than 0.3 (or '@main').
     required: false
     default: '@main'
   python-version:
@@ -84,17 +86,6 @@ runs:
       shell: bash
       run: python "${{ inputs.agent-script }}"
 
-    - name: Get latest run ID
-      shell: bash
-      id: get-run
-      run: |
-        RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); runs=data.get('runs') or []; run=runs[0] if runs else {}; print(run.get('trace_id') or run.get('run_id') or '')")
-        if [ -z "$RUN_ID" ]; then
-          echo "No Maida run found. Ensure agent-script records a traced run with @trace or traced_run()."
-          exit 3
-        fi
-        echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-
     - name: Run assertions
       shell: bash
       id: assert
@@ -109,7 +100,18 @@ runs:
         if [ -n "${{ inputs.extra-args }}" ]; then
           ARGS="$ARGS ${{ inputs.extra-args }}"
         fi
-        maida assert "${{ steps.get-run.outputs.run_id }}" $ARGS --format markdown > maida-report.md || echo "assert_failed=true" >> $GITHUB_OUTPUT
+        # `maida assert` defaults to the latest recorded run.
+        set +e
+        maida assert $ARGS --format markdown > maida-report.md
+        status=$?
+        set -e
+        if [ "$status" -eq 1 ]; then
+          echo "assert_failed=true" >> "$GITHUB_OUTPUT"
+        elif [ "$status" -ne 0 ]; then
+          echo "maida assert exited with code $status before producing a report."
+          echo "No Maida run found? Ensure agent-script records a traced run with @trace or traced_run()."
+          exit "$status"
+        fi
 
     - name: Show PR comment in the action log
       shell: bash
