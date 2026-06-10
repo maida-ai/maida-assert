@@ -5,6 +5,13 @@ against your AI agent on every PR. It executes your traced agent script,
 compares the resulting run to a baseline and policy, and posts a Markdown
 regression report as a sticky PR comment. The job fails if any check regresses.
 
+The report leads with a pass/fail verdict, shows failed checks first with
+expected vs actual values, and — when a baseline is provided — includes a
+"What changed vs baseline" section (new tools, metric deltas, model changes)
+so reviewers see *why* the gate failed without leaving the PR.
+
+Tip: scaffold this workflow with [`maida init --github`](https://github.com/maida-ai/maida).
+
 ## Usage
 
 Add a workflow to your repository (for example
@@ -135,15 +142,13 @@ policy file.
 ## Running `maida assert` locally
 
 For a quick local check before pushing, install the `maida-ai` package and run the
-same command the action runs:
+same commands the action runs (`maida assert` defaults to the latest run):
 
 ```bash
 uv add maida-ai
 
 python my_agent.py
-RUN_ID=$(maida list --json | python -c "import sys,json; data=json.load(sys.stdin); run=(data.get('runs') or [{}])[0]; print(run.get('trace_id') or run.get('run_id') or '')")
-
-maida assert "$RUN_ID" \
+maida assert \
   --baseline baselines/my_agent.json \
   --policy .maida/policy.yaml
 ```
@@ -151,7 +156,7 @@ maida assert "$RUN_ID" \
 To capture a new baseline from a known-good run:
 
 ```bash
-maida baseline "$RUN_ID" --out baselines/my_agent.json
+maida baseline --out baselines/my_agent.json
 ```
 
 The action surfaces a single non-zero exit on any failure. For the
