@@ -45,14 +45,31 @@ def test_no_broken_baseline_generation_step():
         assert step.get("name") != "Create baseline if not provided"
 
 
-def test_get_latest_run_accepts_otel_trace_id():
+def test_no_run_id_extraction_step():
+    """`maida assert` defaults to the latest run, so the old 'Get latest
+    run ID' step (a maida list --json | python -c pipeline) must be gone."""
     steps = _load_action()["runs"]["steps"]
-    get_run_step = next(
-        step for step in steps if step.get("id") == "get-run"
-    )
-    script = get_run_step["run"]
-    assert ".get('trace_id')" in script
-    assert ".get('run_id')" in script
+    for step in steps:
+        assert step.get("id") != "get-run"
+        assert step.get("name") != "Get latest run ID"
+
+
+def test_assert_step_runs_without_run_id():
+    steps = _load_action()["runs"]["steps"]
+    assert_step = next(step for step in steps if step.get("id") == "assert")
+    script = assert_step["run"]
+    assert "maida assert $ARGS --format markdown" in script
+    assert "steps.get-run" not in script
+
+
+def test_assert_step_distinguishes_failure_from_error():
+    """Exit 1 (checks failed) posts the report; other non-zero exits
+    (no run recorded, internal error) fail the step immediately."""
+    steps = _load_action()["runs"]["steps"]
+    assert_step = next(step for step in steps if step.get("id") == "assert")
+    script = assert_step["run"]
+    assert "assert_failed=true" in script
+    assert 'exit "$status"' in script
     assert "No Maida run found" in script
 
 
