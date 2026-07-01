@@ -168,6 +168,14 @@ def test_readme_uses_maida_ai_package_for_local_install():
     assert "uv add maida\n" not in readme
 
 
+def test_readme_workflows_use_current_action_version():
+    readme = (REPO_ROOT / "README.md").read_text()
+    assert "maida-ai/maida-assert@V4" in readme
+    assert "maida-ai/maida-assert@v1" not in readme
+    assert "maida-ai/maida-assert@v2" not in readme
+    assert "maida-ai/maida-assert@V3" not in readme
+
+
 def test_public_files_use_current_branding():
     forbidden = (
         "Agent" + "Dbg",

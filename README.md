@@ -25,8 +25,8 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v2
+      - uses: actions/checkout@v7
+      - uses: maida-ai/maida-assert@V4
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
@@ -66,8 +66,8 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v2
+      - uses: actions/checkout@v7
+      - uses: maida-ai/maida-assert@V4
         with:
           agent-script: my_agent.py
 ```
@@ -85,8 +85,8 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v2
+      - uses: actions/checkout@v7
+      - uses: maida-ai/maida-assert@V4
         with:
           agent-script: examples/my_agent.py
           baseline: baselines/my_agent.json
@@ -112,8 +112,8 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: maida-ai/maida-assert@v2
+      - uses: actions/checkout@v7
+      - uses: maida-ai/maida-assert@V4
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
