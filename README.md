@@ -21,6 +21,11 @@ Add a workflow to your repository (for example
 name: Agent Regression Check
 on: [pull_request]
 
+# Required for checkout plus sticky PR comments.
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   agent-check:
     runs-on: ubuntu-latest
@@ -47,7 +52,7 @@ Your `agent-script` must instrument the agent with `@trace` or
 | `extra-args` | no | `''` | Additional CLI arguments forwarded to `maida assert` (e.g. `--max-steps 20 --no-loops`). CLI flags override policy values. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
 
-**Note:** If the `post-comment` input is `true` and the workflow runs on a `pull_request` event, the action requires the `pull-requests: write` permission.
+**Note:** If the `post-comment` input is `true` and the workflow runs on a `pull_request` event, the workflow requires `contents: read` for checkout and `pull-requests: write` for the sticky PR comment.
 More details can be found in the [GitHub Actions documentation](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#permissions) and [sticky-pull-request-comment documentation](https://github.com/marocchino/sticky-pull-request-comment#error-resource-not-accessible-by-integration).
 
 ## Example workflows
@@ -61,6 +66,11 @@ limits (no loops, no guardrail violations, max steps, etc.) defined in
 ```yaml
 name: Agent Policy Check
 on: [pull_request]
+
+# Required for checkout plus sticky PR comments.
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   agent-check:
@@ -80,6 +90,11 @@ Pin `maida` to a PyPI release, override a couple of thresholds via
 ```yaml
 name: Agent Regression Check
 on: [pull_request]
+
+# Required for checkout plus sticky PR comments.
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   agent-check:
@@ -107,6 +122,10 @@ on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
+
+# Checkout only; this workflow does not post PR comments.
+permissions:
+  contents: read
 
 jobs:
   agent-check:

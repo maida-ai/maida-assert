@@ -6,10 +6,31 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ACTION_PATH = REPO_ROOT / "action.yml"
+README_PATH = REPO_ROOT / "README.md"
+CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _load_action():
     return yaml.safe_load(ACTION_PATH.read_text())
+
+
+def _readme_yaml_blocks():
+    readme = README_PATH.read_text()
+    blocks = []
+    in_yaml = False
+    current = []
+    for line in readme.splitlines():
+        if line == "```yaml":
+            in_yaml = True
+            current = []
+            continue
+        if line == "```" and in_yaml:
+            in_yaml = False
+            blocks.append("\n".join(current))
+            continue
+        if in_yaml:
+            current.append(line)
+    return blocks
 
 
 def test_composite_action_type():
@@ -169,11 +190,42 @@ def test_readme_uses_maida_ai_package_for_local_install():
 
 
 def test_readme_workflows_use_current_action_version():
-    readme = (REPO_ROOT / "README.md").read_text()
+    readme = README_PATH.read_text()
     assert "maida-ai/maida-assert@V4" in readme
     assert "maida-ai/maida-assert@v1" not in readme
     assert "maida-ai/maida-assert@v2" not in readme
     assert "maida-ai/maida-assert@V3" not in readme
+
+
+def test_readme_pr_workflows_declare_minimal_permissions():
+    pr_workflows = [
+        block for block in _readme_yaml_blocks()
+        if "on: [pull_request]" in block
+    ]
+    assert pr_workflows
+    for block in pr_workflows:
+        assert "permissions:\n  contents: read\n  pull-requests: write" in block
+
+
+def test_readme_no_comment_workflow_omits_pr_write_permission():
+    no_comment_workflows = [
+        block for block in _readme_yaml_blocks()
+        if "post-comment: 'false'" in block
+    ]
+    assert len(no_comment_workflows) == 1
+    workflow = no_comment_workflows[0]
+    assert "permissions:\n  contents: read" in workflow
+    assert "pull-requests: write" not in workflow
+
+
+def test_ci_workflow_uses_minimal_job_permissions():
+    workflow = yaml.safe_load(CI_WORKFLOW_PATH.read_text())
+    jobs = workflow["jobs"]
+    assert jobs["unit-tests"]["permissions"] == {"contents": "read"}
+    assert jobs["integration"]["permissions"] == {
+        "contents": "read",
+        "pull-requests": "write",
+    }
 
 
 def test_public_files_use_current_branding():
