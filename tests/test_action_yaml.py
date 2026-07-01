@@ -197,6 +197,14 @@ def test_readme_workflows_use_current_action_version():
     assert "maida-ai/maida-assert@V3" not in readme
 
 
+def test_readme_describes_current_pr_comment_contract():
+    readme = README_PATH.read_text()
+    assert "pass/fail verdict" in readme
+    assert "top behavior changes" in readme
+    assert "stable reason code" in readme
+    assert "concise\nnext steps" in readme
+
+
 def test_readme_pr_workflows_declare_minimal_permissions():
     pr_workflows = [
         block for block in _readme_yaml_blocks()

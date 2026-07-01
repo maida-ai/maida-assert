@@ -5,10 +5,10 @@ against your AI agent on every PR. It executes your traced agent script,
 compares the resulting run to a baseline and policy, and posts a Markdown
 regression report as a sticky PR comment. The job fails if any check regresses.
 
-The report leads with a pass/fail verdict, shows failed checks first with
-expected vs actual values, and — when a baseline is provided — includes a
-"What changed vs baseline" section (new tools, metric deltas, model changes)
-so reviewers see *why* the gate failed without leaving the PR.
+The report leads with a pass/fail verdict, shows top behavior changes
+(steps, tool path, loops/cycles, guardrails, terminal state, latency/cost,
+and models), groups failed checks by stable reason code, and includes concise
+next steps so reviewers see *why* the gate failed without leaving the PR.
 
 Tip: scaffold this workflow with [`maida init --github`](https://github.com/maida-ai/maida).
 
