@@ -3,18 +3,37 @@ name: CI
 on:
   push:
     branches: [main]
+    paths: &test_paths
+      - .maida/**
+      - .github/workflows/**
+      - action.yml
+      - examples/**
+      - tests/**
   pull_request:
-    branches: [main]
+    paths: *test_paths
 
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+
+    if: >-
+      ${{
+        github.event_name == 'push' ||
+        github.event.pull_request.base.ref == 'main' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dev dependencies
         run: pip install -r requirements-dev.txt
@@ -24,10 +43,16 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event_name == 'push' ||
+        github.event.pull_request.base.ref == 'main' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      }}
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Uses the local composite action (./action.yml) so CI always
       # tests the version checked into this branch.
