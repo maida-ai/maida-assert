@@ -113,6 +113,53 @@ runs:
           exit "$status"
         fi
 
+    - name: Add local reproduction hint
+      shell: bash
+      env:
+        AGENT_SCRIPT: ${{ inputs.agent-script }}
+        BASELINE: ${{ inputs.baseline }}
+        POLICY: ${{ inputs.policy }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        MAIDA_VERSION: ${{ inputs.maida-version }}
+      run: |
+        {
+          echo ""
+          echo "---"
+          echo ""
+          echo "<details>"
+          echo "<summary><i>Reproducibility Instructions</i></summary>"
+          echo ""
+          echo "The \`maida view <id>\` command in this report refers to this CI job's trace store. That ID is not available on your machine until you record a local run."
+          echo ""
+          echo "From this PR checkout, record a fresh local run and rerun the same assertion inputs:"
+          echo ""
+          echo '```bash'
+          if [[ "$MAIDA_VERSION" == "@"* ]]; then
+            printf "python -m pip install %q\n" "git+https://github.com/maida-ai/maida.git${MAIDA_VERSION}"
+          elif [[ "$MAIDA_VERSION" == "v"* ]]; then
+            printf "python -m pip install %q\n" "maida-ai==${MAIDA_VERSION:1}"
+          else
+            printf "# Install Maida using the workflow version: %q\n" "$MAIDA_VERSION"
+          fi
+          printf "python %q\n" "$AGENT_SCRIPT"
+          printf "maida assert"
+          if [ -n "$BASELINE" ]; then
+            printf " --baseline %q" "$BASELINE"
+          fi
+          if [ -n "$POLICY" ]; then
+            printf " --policy %q" "$POLICY"
+          fi
+          if [ -n "$EXTRA_ARGS" ]; then
+            printf " %s" "$EXTRA_ARGS"
+          fi
+          printf "\n"
+          echo '```'
+          echo ""
+          echo "Then run \`maida view <local-id>\` using the ID produced by your local run."
+          echo "</details>"
+          echo ""
+        } >> maida-report.md
+
     - name: Show PR comment in the action log
       shell: bash
       run: |

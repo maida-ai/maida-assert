@@ -73,6 +73,85 @@ def test_assert_step_distinguishes_failure_from_error():
     assert "No Maida run found" in script
 
 
+def test_assert_failure_is_reported_before_action_fails():
+    steps = _load_action()["runs"]["steps"]
+    assert_step_index = next(
+        index for index, step in enumerate(steps) if step.get("id") == "assert"
+    )
+    show_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Show PR comment in the action log"
+    )
+    post_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Post PR comment if possible"
+    )
+    fail_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Fail if assertions failed"
+    )
+
+    assert assert_step_index < show_step_index
+    assert show_step_index < post_step_index < fail_step_index
+
+    fail_step = steps[fail_step_index]
+    assert fail_step["if"] == "steps.assert.outputs.assert_failed == 'true'"
+    assert fail_step["run"] == "exit 1"
+
+
+def test_action_report_uses_cli_generated_markdown_file():
+    steps = _load_action()["runs"]["steps"]
+    assert_step = next(step for step in steps if step.get("id") == "assert")
+    show_step = next(
+        step for step in steps if step.get("name") == "Show PR comment in the action log"
+    )
+    post_step = next(
+        step for step in steps if step.get("name") == "Post PR comment if possible"
+    )
+
+    assert "maida assert $ARGS --format markdown > maida-report.md" in assert_step["run"]
+    assert "cat maida-report.md" in show_step["run"]
+    assert post_step["with"]["path"] == "maida-report.md"
+
+
+def test_report_adds_local_reproduction_hint_before_posting():
+    steps = _load_action()["runs"]["steps"]
+    append_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Add local reproduction hint"
+    )
+    show_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Show PR comment in the action log"
+    )
+    post_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Post PR comment if possible"
+    )
+
+    assert append_step_index < show_step_index < post_step_index
+
+    append_step = steps[append_step_index]
+    script = append_step["run"]
+    assert "Reproducibility Instructions" in script
+    assert "CI job's trace store" in script
+    assert 'printf "python -m pip install %q\\n"' in script
+    assert "git+https://github.com/maida-ai/maida.git${MAIDA_VERSION}" in script
+    assert "maida-ai==${MAIDA_VERSION:1}" in script
+    assert 'printf "python %q\\n" "$AGENT_SCRIPT"' in script
+    assert 'printf "maida assert"' in script
+    assert 'printf " --baseline %q" "$BASELINE"' in script
+    assert 'printf " --policy %q" "$POLICY"' in script
+    assert 'printf " %s" "$EXTRA_ARGS"' in script
+    assert ">> maida-report.md" in script
+
+
 def test_pypi_install_uses_maida_ai_package():
     steps = _load_action()["runs"]["steps"]
     install_step = next(
