@@ -80,6 +80,7 @@ def test_assert_step_runs_without_run_id():
     assert_step = next(step for step in steps if step.get("id") == "assert")
     script = assert_step["run"]
     assert "maida assert $ARGS --format markdown" in script
+    assert "> maida-report.md" in script
     assert "steps.get-run" not in script
 
 
@@ -89,7 +90,10 @@ def test_assert_step_distinguishes_failure_from_error():
     steps = _load_action()["runs"]["steps"]
     assert_step = next(step for step in steps if step.get("id") == "assert")
     script = assert_step["run"]
+    assert "status=$?" in script
+    assert 'if [ "$status" -eq 1 ]; then' in script
     assert "assert_failed=true" in script
+    assert 'elif [ "$status" -ne 0 ]; then' in script
     assert 'exit "$status"' in script
     assert "No Maida run found" in script
 
