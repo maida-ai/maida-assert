@@ -178,9 +178,11 @@ To capture a new baseline from a known-good run:
 maida baseline --out baselines/my_agent.json
 ```
 
-The action surfaces a single non-zero exit on any failure. For the
-underlying CLI exit codes (baseline missing, internal error, etc.),
-see the [`maida` reference](https://github.com/maida-ai/maida/blob/main/docs/cli.md).
+When `maida assert` reports failed checks, the action still publishes the
+Markdown report and then exits `1`. Missing runs or baselines and internal
+errors exit immediately with the underlying CLI/setup code. See the
+[`maida` reference](https://github.com/maida-ai/maida/blob/main/docs/cli.md)
+for the full exit-code contract.
 
 For installation, tracing your agent, and the rest of the workflow,
 see the Maida
