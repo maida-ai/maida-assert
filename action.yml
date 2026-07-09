@@ -156,6 +156,17 @@ runs:
           echo '```'
           echo ""
           echo "Then run \`maida view <local-id>\` using the ID produced by your local run."
+          if [ -n "$BASELINE" ]; then
+            echo ""
+            echo "If the local behavior change is intentional, accept it explicitly and review the baseline diff:"
+            echo ""
+            echo '```bash'
+            printf "maida diff <local-id> --baseline %q\n" "$BASELINE"
+            printf "maida view <local-id>\n"
+            printf "maida accept <local-id> --baseline %q --reason %q\n" "$BASELINE" "why this behavior is expected"
+            printf "git diff -- %q\n" "$BASELINE"
+            echo '```'
+          fi
           echo "</details>"
           echo ""
         } >> maida-report.md

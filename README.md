@@ -9,6 +9,9 @@ The report leads with a pass/fail verdict, shows top behavior changes
 (steps, tool path, loops/cycles, guardrails, terminal state, latency/cost,
 and models), groups failed checks by stable reason code, and includes concise
 next steps so reviewers see *why* the gate failed without leaving the PR.
+For baseline failures, the local reproduction hint also shows the explicit
+`maida accept --reason ...` path to use only after the change is inspected and
+intentional.
 
 Tip: scaffold this workflow with [`maida init --github`](https://github.com/maida-ai/maida).
 
