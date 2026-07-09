@@ -209,6 +209,19 @@ def test_readme_describes_current_pr_comment_contract():
     assert "concise\nnext steps" in readme
 
 
+def test_readme_documents_baseline_acceptance_workflow():
+    readme = README_PATH.read_text()
+    assert "intentional behavior change" in readme
+    assert "maida diff --baseline baselines/my_agent.json" in readme
+    assert (
+        'maida accept --baseline baselines/my_agent.json --reason "expected tool flow change"'
+        in readme
+    )
+    assert "git diff baselines/my_agent.json" in readme
+    assert "previous baseline hash" in readme
+    assert "Do not use `maida accept` for a\nregression you have not inspected" in readme
+
+
 def test_readme_pr_workflows_declare_minimal_permissions():
     pr_workflows = [
         block for block in _readme_yaml_blocks()

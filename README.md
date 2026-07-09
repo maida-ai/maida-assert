@@ -178,6 +178,21 @@ To capture a new baseline from a known-good run:
 maida baseline --out baselines/my_agent.json
 ```
 
+If a PR failure is an intentional behavior change, inspect it first and then
+update the baseline explicitly:
+
+```bash
+maida diff --baseline baselines/my_agent.json
+maida view
+maida accept --baseline baselines/my_agent.json --reason "expected tool flow change"
+git diff baselines/my_agent.json
+```
+
+Review the baseline JSON diff before committing it. The updated file records
+the acceptance reason, the accepted run, and the previous baseline hash so the
+baseline change remains reviewable in Git. Do not use `maida accept` for a
+regression you have not inspected; fix the agent behavior instead.
+
 When `maida assert` reports failed checks, the action still publishes the
 Markdown report and then exits `1`. Missing runs or baselines and internal
 errors exit immediately with the underlying CLI/setup code. See the
