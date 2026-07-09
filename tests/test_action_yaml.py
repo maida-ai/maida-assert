@@ -174,6 +174,14 @@ def test_report_adds_local_reproduction_hint_before_posting():
     assert 'printf " --baseline %q" "$BASELINE"' in script
     assert 'printf " --policy %q" "$POLICY"' in script
     assert 'printf " %s" "$EXTRA_ARGS"' in script
+    assert 'if [ -n "$BASELINE" ]; then' in script
+    assert "If the local behavior change is intentional" in script
+    assert 'printf "maida diff <local-id> --baseline %q\\n" "$BASELINE"' in script
+    assert (
+        'printf "maida accept <local-id> --baseline %q --reason %q\\n" "$BASELINE" "why this behavior is expected"'
+        in script
+    )
+    assert 'printf "git diff -- %q\\n" "$BASELINE"' in script
     assert ">> maida-report.md" in script
 
 
@@ -207,6 +215,7 @@ def test_readme_describes_current_pr_comment_contract():
     assert "top behavior changes" in readme
     assert "stable reason code" in readme
     assert "concise\nnext steps" in readme
+    assert "`maida accept --reason ...` path" in readme
 
 
 def test_readme_documents_baseline_acceptance_workflow():
