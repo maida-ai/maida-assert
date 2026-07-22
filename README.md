@@ -196,6 +196,69 @@ the acceptance reason, the accepted run, and the previous baseline hash so the
 baseline change remains reviewable in Git. Do not use `maida accept` for a
 regression you have not inspected; fix the agent behavior instead.
 
+## Baseline write-back engine
+
+The `write-back` sub-action is the mutation engine for an authorized PR command
+handler. It accepts a completed Maida run, commits only the configured baseline
+with the standard Actions bot identity, pushes it to the exact PR head branch,
+and requests a fresh gate run. It supports same-repository pull requests only;
+fork PRs fail before the baseline is changed.
+
+The handler job must check out the verified PR head SHA with the Actions token,
+run the traced agent so a completed run exists, and grant `contents: write`:
+
+```yaml
+permissions:
+  contents: write
+
+steps:
+  - uses: actions/checkout@v7
+    with:
+      repository: ${{ steps.pr.outputs.head_repository }}
+      ref: ${{ steps.pr.outputs.head_sha }}
+
+  # Install Maida and run the traced agent before this step.
+  - id: write-back
+    uses: maida-ai/maida-assert/write-back@main
+    with:
+      baseline: baselines/my_agent.json
+      reason: ${{ steps.command.outputs.reason }}
+      pr-number: ${{ github.event.issue.number }}
+      head-repository: ${{ steps.pr.outputs.head_repository }}
+      head-branch: ${{ steps.pr.outputs.head_branch }}
+      expected-head-sha: ${{ steps.pr.outputs.head_sha }}
+      github-token: ${{ github.token }}
+```
+
+The action refuses a stale checkout and uses a normal, non-force push, so a
+concurrent update to the PR branch fails safely. It emits a
+`maida_baseline_updated` `repository_dispatch` after acceptance because pushes
+made with `GITHUB_TOKEN` do not trigger ordinary workflow runs. A workflow on
+the default branch must listen for that event and check out the dispatched SHA:
+
+```yaml
+on:
+  repository_dispatch:
+    types: [maida_baseline_updated]
+
+jobs:
+  agent-check:
+    if: github.event.client_payload.pr_number != ''
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+      # Run the normal Maida gate against this checkout.
+      # Publish its conclusion against github.event.client_payload.sha.
+```
+
+The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`. If a
+push succeeds but dispatch fails, rerun the authorized command: an unchanged
+baseline creates no duplicate commit but still requests the fresh gate.
+GitHub associates the dispatch workflow itself with the default-branch SHA, so
+the consuming command-handler workflow must publish the gate status or check
+against `client_payload.sha` for required PR checks to recognize the result.
+
 When `maida assert` reports failed checks, the action still publishes the
 Markdown report and then exits `1`. Missing runs or baselines and internal
 errors exit immediately with the underlying CLI/setup code. See the

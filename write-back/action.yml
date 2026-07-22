@@ -1,0 +1,70 @@
+name: 'Maida Baseline Write-Back'
+description: 'Accept and commit an intentional Maida baseline change to a PR branch'
+
+inputs:
+  baseline:
+    description: 'Tracked baseline JSON file to update'
+    required: true
+  reason:
+    description: 'Why this behavior change is intentional'
+    required: true
+  pr-number:
+    description: 'Pull request number associated with the write-back'
+    required: true
+  head-repository:
+    description: 'PR head repository in owner/repo form'
+    required: true
+  head-branch:
+    description: 'PR head branch that will receive the baseline commit'
+    required: true
+  expected-head-sha:
+    description: 'PR head SHA that must be checked out before write-back'
+    required: true
+  github-token:
+    description: 'Actions token with contents: write permission'
+    required: true
+  run-id:
+    description: 'Completed Maida run to accept; defaults to the latest run'
+    required: false
+    default: ''
+
+outputs:
+  changed:
+    description: 'Whether a new baseline commit was created'
+    value: '${{ steps.write-back.outputs.changed }}'
+  commit-sha:
+    description: 'Created baseline commit SHA, or empty when unchanged'
+    value: '${{ steps.write-back.outputs.commit-sha }}'
+  head-sha:
+    description: 'PR head SHA sent to the fresh-gate dispatch'
+    value: '${{ steps.write-back.outputs.head-sha }}'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Write baseline back to PR branch
+      id: write-back
+      shell: bash
+      env:
+        GITHUB_TOKEN: '${{ inputs.github-token }}'
+        MAIDA_BASELINE: '${{ inputs.baseline }}'
+        MAIDA_ACCEPT_REASON: '${{ inputs.reason }}'
+        MAIDA_PR_NUMBER: '${{ inputs.pr-number }}'
+        MAIDA_HEAD_REPOSITORY: '${{ inputs.head-repository }}'
+        MAIDA_HEAD_BRANCH: '${{ inputs.head-branch }}'
+        MAIDA_EXPECTED_HEAD_SHA: '${{ inputs.expected-head-sha }}'
+        MAIDA_RUN_ID: '${{ inputs.run-id }}'
+        MAIDA_WRITE_BACK_ACTION_PATH: '${{ github.action_path }}'
+      run: |
+        args=(
+          --baseline "$MAIDA_BASELINE"
+          --reason "$MAIDA_ACCEPT_REASON"
+          --pr-number "$MAIDA_PR_NUMBER"
+          --head-repository "$MAIDA_HEAD_REPOSITORY"
+          --head-branch "$MAIDA_HEAD_BRANCH"
+          --expected-head-sha "$MAIDA_EXPECTED_HEAD_SHA"
+        )
+        if [ -n "$MAIDA_RUN_ID" ]; then
+          args+=(--run-id "$MAIDA_RUN_ID")
+        fi
+        python "$MAIDA_WRITE_BACK_ACTION_PATH/../scripts/write_back.py" "${args[@]}"
