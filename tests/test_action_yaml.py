@@ -6,6 +6,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ACTION_PATH = REPO_ROOT / "action.yml"
+WRITE_BACK_ACTION_PATH = REPO_ROOT / "write-back" / "action.yml"
 README_PATH = REPO_ROOT / "README.md"
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
@@ -274,8 +275,8 @@ def test_public_files_use_current_branding():
         ".agent" + "dbg",
         "AGENT" + "DBG",
     )
-    skipped_dirs = {".git", ".pytest_cache", "__pycache__"}
-    skipped_files = {"AGENTS.md"}
+    skipped_dirs = {".git", ".pytest_cache", ".ruff_cache", "__pycache__"}
+    skipped_files = {".coverage", "AGENTS.md"}
 
     leaks = []
     for path in sorted(REPO_ROOT.rglob("*")):
@@ -292,3 +293,15 @@ def test_public_files_use_current_branding():
                 leaks.append(f"{relative_path} contains {term}")
 
     assert leaks == []
+
+
+def test_readme_documents_write_back_security_and_dispatch_contract():
+    readme = README_PATH.read_text()
+    assert "maida-ai/maida-assert/write-back@main" in readme
+    assert "contents: write" in readme
+    assert "same-repository pull requests only" in readme
+    assert "maida_baseline_updated" in readme
+    assert "github.event.client_payload.sha" in readme
+    assert "github.event.client_payload.pr_number" in readme
+    assert "default-branch SHA" in readme
+    assert "publish the gate status or check" in readme
