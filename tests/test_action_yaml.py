@@ -48,7 +48,7 @@ def test_required_inputs_present():
 def test_optional_inputs_have_defaults():
     inputs = _load_action()["inputs"]
     for name in ("baseline", "policy", "maida-version", "python-version",
-                 "extra-args", "post-comment"):
+                 "extra-args", "post-comment", "accept-command-enabled"):
         assert name in inputs, f"missing input: {name}"
         assert "default" in inputs[name], f"{name} has no default"
     assert "agent" + "dbg-version" not in inputs
@@ -186,6 +186,22 @@ def test_report_adds_local_reproduction_hint_before_posting():
     assert ">> maida-report.md" in script
 
 
+def test_report_advertises_accept_command_only_when_enabled():
+    action = _load_action()
+    assert action["inputs"]["accept-command-enabled"]["default"] == "false"
+    append_step = next(
+        step
+        for step in action["runs"]["steps"]
+        if step.get("name") == "Add local reproduction hint"
+    )
+    assert append_step["env"]["ACCEPT_COMMAND_ENABLED"] == (
+        "${{ inputs.accept-command-enabled }}"
+    )
+    script = append_step["run"]
+    assert 'if [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then' in script
+    assert "/maida accept [optional reason]" in script
+
+
 def test_pypi_install_uses_maida_ai_package():
     steps = _load_action()["runs"]["steps"]
     install_step = next(
@@ -262,6 +278,11 @@ def test_ci_workflow_uses_minimal_job_permissions():
         "pull-requests": "write",
     }
 
+    workflow_text = CI_WORKFLOW_PATH.read_text()
+    assert "accept-command/**" in workflow_text
+    assert "scripts/**" in workflow_text
+    assert "write-back/**" in workflow_text
+
 
 def test_public_files_use_current_branding():
     forbidden = (
@@ -305,3 +326,13 @@ def test_readme_documents_write_back_security_and_dispatch_contract():
     assert "github.event.client_payload.pr_number" in readme
     assert "default-branch SHA" in readme
     assert "publish the gate status or check" in readme
+
+
+def test_readme_documents_authorized_accept_command_workflow():
+    readme = README_PATH.read_text()
+    assert "maida-ai/maida-assert/accept-command@main" in readme
+    assert "issue_comment" in readme
+    assert "accept-command-enabled: 'true'" in readme
+    assert "/maida accept [optional reason]" in readme
+    assert "write access" in readme
+    assert "Fork pull requests" in readme

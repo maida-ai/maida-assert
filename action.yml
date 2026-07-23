@@ -35,6 +35,10 @@ inputs:
     description: 'Post results as PR comment (true/false)'
     required: false
     default: 'true'
+  accept-command-enabled:
+    description: 'Advertise /maida accept in failed baseline reports (true/false)'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -121,11 +125,18 @@ runs:
         POLICY: ${{ inputs.policy }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
         MAIDA_VERSION: ${{ inputs.maida-version }}
+        ACCEPT_COMMAND_ENABLED: ${{ inputs.accept-command-enabled }}
       run: |
         {
           echo ""
           echo "---"
           echo ""
+          if [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then
+            echo "### Accept this intentional change"
+            echo ""
+            echo "After reviewing the diff and trace, a repository maintainer can comment `/maida accept [optional reason]` on this PR."
+            echo ""
+          fi
           echo "<details>"
           echo "<summary><i>Reproducibility Instructions</i></summary>"
           echo ""
