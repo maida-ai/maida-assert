@@ -196,6 +196,51 @@ the acceptance reason, the accepted run, and the previous baseline hash so the
 baseline change remains reviewable in Git. Do not use `maida accept` for a
 regression you have not inspected; fix the agent behavior instead.
 
+## Accept an intentional change from a PR
+
+The `accept-command` sub-action turns an authorized
+`/maida accept [optional reason]` PR comment
+into a baseline-only bot commit. It checks the commenter's repository permission
+before checking out or running PR code. Users need write access. Fork pull requests
+are refused before checkout. A bare command records the commenter as
+the reason, while `/maida accept expected retrieval flow` records the trailing
+text.
+
+Add an `issue_comment` workflow on the default branch:
+
+```yaml
+name: Accept Maida Baseline
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  accept:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/maida accept')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: maida-ai/maida-assert/accept-command@main
+        with:
+          agent-script: my_agent.py
+          baseline: baselines/my_agent.json
+          policy: .maida/policy.yaml
+          github-token: ${{ github.token }}
+```
+
+Enable the visible command hint in the normal gate step with
+`accept-command-enabled: 'true'`. The handler reruns the traced agent and
+assertion inputs, delegates the baseline-only commit to the write-back engine,
+and posts either a commit link, an already-current confirmation, or an
+actionable workflow failure. The write-back dispatch still requires the normal
+gate workflow to listen for `maida_baseline_updated` as described below.
+
 ## Baseline write-back engine
 
 The `write-back` sub-action is the mutation engine for an authorized PR command

@@ -7,8 +7,11 @@ on:
       - .maida/**
       - .github/workflows/**
       - action.yml
+      - accept-command/**
       - examples/**
+      - scripts/**
       - tests/**
+      - write-back/**
   pull_request:
     paths: *test_paths
 
