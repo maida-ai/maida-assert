@@ -19,8 +19,8 @@ inputs:
       If a github identifier starts with 'v', use '@' prefix.
       Otherwise PyPI will be used.
       Default is "@main".
-      Note: this action relies on `maida assert` defaulting to the latest
-      run, which requires a Maida release newer than 0.3 (or '@main').
+      Note: this action relies on the statistical `maida run` command.
+      Use '@main' until that command is included in a Maida release.
     required: false
     default: '@main'
   python-version:
@@ -28,7 +28,7 @@ inputs:
     required: false
     default: '3.12'
   extra-args:
-    description: 'Additional arguments to pass to maida assert'
+    description: 'Additional arguments to pass to maida run'
     required: false
     default: ''
   post-comment:
@@ -40,20 +40,23 @@ runs:
   using: 'composite'
   steps:
     - name: Check if baseline and policy are provided
+      env:
+        BASELINE: ${{ inputs.baseline }}
+        POLICY: ${{ inputs.policy }}
       shell: bash
       run: |
         # At least one of baseline or policy must be provided
-        if [ -z "${{ inputs.baseline }}" ] && [ -z "${{ inputs.policy }}" ]; then
+        if [ -z "$BASELINE" ] && [ -z "$POLICY" ]; then
           echo "Either baseline, policy, or both must be provided."
           exit 1
         fi
         # If either is provided, the files must exist
-        if [ -n "${{ inputs.baseline }}" ] && [ ! -f "${{ inputs.baseline }}" ]; then
-          echo "Baseline file does not exist: ${{ inputs.baseline }}"
+        if [ -n "$BASELINE" ] && [ ! -f "$BASELINE" ]; then
+          echo "Baseline file does not exist: $BASELINE"
           exit 2
         fi
-        if [ -n "${{ inputs.policy }}" ] && [ ! -f "${{ inputs.policy }}" ]; then
-          echo "Policy file does not exist: ${{ inputs.policy }}"
+        if [ -n "$POLICY" ] && [ ! -f "$POLICY" ]; then
+          echo "Policy file does not exist: $POLICY"
           exit 2
         fi
 
@@ -82,36 +85,49 @@ runs:
           exit 10
         fi
 
-    - name: Run agent
+    - name: Run Maida statistical gate
       shell: bash
-      run: python "${{ inputs.agent-script }}"
-
-    - name: Run assertions
-      shell: bash
-      id: assert
+      id: gate
+      env:
+        AGENT_SCRIPT: ${{ inputs.agent-script }}
+        BASELINE: ${{ inputs.baseline }}
+        POLICY: ${{ inputs.policy }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
       run: |
-        ARGS=""
-        if [ -n "${{ inputs.baseline }}" ]; then
-          ARGS="$ARGS --baseline ${{ inputs.baseline }}"
+        ARGS=()
+        if [ -n "$BASELINE" ]; then
+          ARGS+=(--baseline "$BASELINE")
         fi
-        if [ -f "${{ inputs.policy }}" ]; then
-          ARGS="$ARGS --policy ${{ inputs.policy }}"
+        if [ -f "$POLICY" ]; then
+          ARGS+=(--policy "$POLICY")
         fi
-        if [ -n "${{ inputs.extra-args }}" ]; then
-          ARGS="$ARGS ${{ inputs.extra-args }}"
+        if [ -n "$EXTRA_ARGS" ]; then
+          read -r -a EXTRA_ARGV <<< "$EXTRA_ARGS"
+          ARGS+=("${EXTRA_ARGV[@]}")
         fi
-        # `maida assert` defaults to the latest recorded run.
         set +e
-        maida assert $ARGS --format markdown > maida-report.md
+        maida run "$AGENT_SCRIPT" "${ARGS[@]}" \
+          --format markdown --json-out maida-report.json > maida-report.md
         status=$?
         set -e
-        if [ "$status" -eq 1 ]; then
-          echo "assert_failed=true" >> "$GITHUB_OUTPUT"
-        elif [ "$status" -ne 0 ]; then
-          echo "maida assert exited with code $status before producing a report."
-          echo "No Maida run found? Ensure agent-script records a traced run with @trace or traced_run()."
+        if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+          echo "maida run exited with code $status and did not produce a statistical gate report."
+          echo "Ensure agent-script records exactly one completed trace per trial with @trace or traced_run()."
           exit "$status"
         fi
+
+    - name: Prepare GitHub check
+      id: check
+      shell: bash
+      env:
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        DETAILS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        python "$GITHUB_ACTION_PATH/scripts/prepare_check.py" \
+          --report maida-report.json \
+          --output maida-check-payload.json \
+          --head-sha "$HEAD_SHA" \
+          --details-url "$DETAILS_URL" >> "$GITHUB_OUTPUT"
 
     - name: Add local reproduction hint
       shell: bash
@@ -141,8 +157,7 @@ runs:
           else
             printf "# Install Maida using the workflow version: %q\n" "$MAIDA_VERSION"
           fi
-          printf "python %q\n" "$AGENT_SCRIPT"
-          printf "maida assert"
+          printf "maida run %q" "$AGENT_SCRIPT"
           if [ -n "$BASELINE" ]; then
             printf " --baseline %q" "$BASELINE"
           fi
@@ -176,6 +191,26 @@ runs:
       run: |
         cat maida-report.md
 
+    - name: Publish Maida statistical gate check
+      id: publish-check
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api \
+          --method POST \
+          --header "Accept: application/vnd.github+json" \
+          --header "X-GitHub-Api-Version: 2022-11-28" \
+          "repos/$GITHUB_REPOSITORY/check-runs" \
+          --input maida-check-payload.json
+
+    - name: Warn when check publication is unavailable
+      if: steps.publish-check.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::Could not publish the 'Maida statistical gate' check. This is expected for forks or read-only tokens; the gate report and PR comment remain available."
+
     - name: Post PR comment if possible
       if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
       continue-on-error: true
@@ -187,5 +222,5 @@ runs:
 
     - name: Fail if assertions failed
       shell: bash
-      if: steps.assert.outputs.assert_failed == 'true'
+      if: steps.check.outputs.verdict == 'fail'
       run: exit 1
