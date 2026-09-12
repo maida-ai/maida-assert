@@ -20,7 +20,7 @@ inputs:
   maida-version:
     description: 'Maida version, using vVERSION for PyPI or @REF for GitHub'
     required: false
-    default: 'v0.5.0'
+    default: 'v0.5.3'
   python-version:
     description: 'Python version passed to actions/setup-python'
     required: false
