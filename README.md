@@ -56,7 +56,7 @@ it must create exactly one completed Maida run.
 | `trace-command` | one trace source | `''` | Trusted shell command that creates exactly one completed Maida run, such as an importer invocation. Do not include secrets in the command. |
 | `baseline` | no | `''` | Path to a baseline JSON file produced by `maida baseline`. If omitted, only the policy is enforced. |
 | `policy` | no | `.maida/policy.yaml` | Path to a policy YAML file. |
-| `maida-version` | no | `v0.5.0` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
+| `maida-version` | no | `v0.5.3` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
 | `extra-args` | no | `''` | Additional CLI arguments forwarded to `maida run` (for example, `--trials 5 --max-steps 20`). CLI flags override policy values. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
@@ -122,7 +122,7 @@ jobs:
           agent-script: examples/my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
-          maida-version: 'v0.5.0'
+          maida-version: 'v0.5.3'
           python-version: '3.11'
           extra-args: --trials 5 --max-steps 20
 ```
