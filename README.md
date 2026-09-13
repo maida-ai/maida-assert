@@ -385,3 +385,52 @@ for the full exit-code contract.
 For installation, tracing your agent, and the rest of the workflow,
 see the Maida
 [getting started guide](https://github.com/maida-ai/maida/blob/main/docs/getting-started.md).
+
+## Testing the Action
+
+The `Action end-to-end` job runs on every PR, including forks and documentation
+changes. Add that exact check name to this repository's required checks; a
+workflow file alone cannot configure branch protection.
+
+The local harness executes the composite shell steps, released `maida-ai==0.5.3`,
+and the pinned sticky-comment Action against a temporary consumer Git repository.
+It tests PASS/success, FAIL/failure, INCONCLUSIVE/neutral, trace-command ingestion,
+setup errors, read-only check publication, and authorized/unauthorized acceptance.
+Authorized acceptance runs the real CLI, creates a baseline-only commit, pushes
+to a local bare repository, requests a rerun through a local API fixture, and
+reruns the gate. The sticky Action must update the existing comment in place.
+Snapshots compare the complete posted Markdown, normalizing only trace IDs;
+the agent fixture supplies fixed recorded timing. All agent behavior is simulated.
+
+Install test dependencies and run the suites with `uv` (Python 3.12, Node 24,
+Bash, and Git are required). Fetch the pinned third-party Action once:
+
+```bash
+git clone --branch v3.0.4 --depth 1 https://github.com/marocchino/sticky-pull-request-comment.git /tmp/maida-sticky-comment
+git -C /tmp/maida-sticky-comment rev-parse HEAD
+# Expected: 0ea0beb66eb9baf113663a64ec522f60e49231c0
+uv run --python 3.12 --with-requirements requirements-dev.txt pytest -q --ignore=tests/e2e
+MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment uv run --python 3.12 --with-requirements requirements-e2e.txt pytest -q tests/e2e
+```
+
+Tests make no external API or model calls after dependency setup. The harness
+replaces Python/package setup, validates the pre-created checkout, and directs
+GitHub HTTP calls to a loopback fixture. Missing dependencies or unsupported
+runner expressions fail the suite. On snapshot failure, review the generated
+`consumer/comment.actual.md` before updating `tests/e2e/snapshots/`.
+CI retains fixture reports and API transcripts for seven days.
+
+The weekly/manual smoke uses a real GitHub runner, package installation, and
+Checks API with the simulated agent: one trial, no test retries, five-minute
+job timeout, and **$0 model spend**. It requests no provider credentials and
+does not post comments. GitHub Actions minutes remain subject to the account's
+billing plan; the timeout bounds runtime, not a dollar charge.
+
+These tests do not establish merge-boundary enforcement. The scheduled smoke
+does not exercise live PR comments or acceptance. A disposable GitHub consumer
+with real branch protection is still needed to verify those paths, base-ref
+policy evaluation, acceptance binding to baseline hash and commit, and reviewed
+changes under `.maida/`. The current Action publishes INCONCLUSIVE as neutral,
+which does not block merging by itself. Protect `.github/workflows/` through
+CODEOWNERS with required review or equivalent repository rules; no local fixture
+can verify that configuration.

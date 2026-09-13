@@ -1,0 +1,99 @@
+name: Action E2E
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 8 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-e2e:
+    name: Action end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: marocchino/sticky-pull-request-comment
+          ref: 0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+          path: .e2e-deps/sticky-comment
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Exercise verdicts, comments, and acceptance
+        env:
+          MAIDA_E2E_STICKY_PATH: ${{ github.workspace }}/.e2e-deps/sticky-comment
+        run: >-
+          uv run --python 3.12 --with-requirements requirements-e2e.txt
+          pytest -q tests/e2e --basetemp=${{ runner.temp }}/maida-e2e
+          --junitxml=${{ runner.temp }}/maida-e2e-results.xml
+      - name: Retain fixture reports and API transcript
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: action-e2e-evidence
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/maida-e2e-results.xml
+            ${{ runner.temp }}/maida-e2e/**/github-api.json
+            ${{ runner.temp }}/maida-e2e/**/consumer/maida-report.*
+            ${{ runner.temp }}/maida-e2e/**/consumer/comment.actual.md
+
+  live-smoke:
+    name: Scheduled GitHub check smoke
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: deterministic-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Record existing check IDs before this attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?filter=all" --paginate --slurp > checks-before.json
+      # Real runner, released CLI, and Checks API; simulated agent, $0 model cost.
+      - uses: ./
+        with:
+          agent-script: examples/ci_dummy_agent.py
+          policy: .maida/policy.yaml
+          extra-args: --trials 1
+          post-comment: 'false'
+      - name: Verify the check was published for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?filter=all" --paginate --slurp > checks.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = json.loads(Path('maida-check-payload.json').read_text())
+          checks = [c for page in json.loads(Path('checks.json').read_text()) for c in page['check_runs']]
+          previous_ids = {c['id'] for page in json.loads(Path('checks-before.json').read_text()) for c in page['check_runs']}
+          # GitHub may replace details_url with its own check URL. The report
+          # summary retains the workflow-run link and binds this attempt's output.
+          matches = [c for c in checks if c['id'] not in previous_ids and c['name'] == expected['name'] and c['head_sha'] == expected['head_sha'] and all(c['output'][key] == expected['output'][key] for key in ('title', 'summary'))]
+          assert len(matches) == 1, 'Expected one new check for this workflow attempt'
+          assert matches[0]['conclusion'] == 'success', matches[0]['conclusion']
+          PY
