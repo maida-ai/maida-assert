@@ -182,7 +182,7 @@ runs:
           if [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then
             echo "### Accept this intentional change"
             echo ""
-            echo "After reviewing the diff and trace, a repository maintainer can comment `/maida accept [optional reason]` on this PR."
+            echo 'After reviewing the diff and trace, a repository maintainer can comment `/maida accept [optional reason]` on this PR.'
             echo ""
           fi
           echo "<details>"
