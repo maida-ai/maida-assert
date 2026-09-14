@@ -198,6 +198,9 @@ jobs:
 
 ## Policy example
 
+Policy files require an explicit supported v2+ version. Policy v1 and files
+without a version are unsupported.
+
 The policy file controls what `maida run` checks across isolated candidate
 trials. Policy v2 fails closed: unknown fields are errors.
 The full list of supported keys is documented in the
