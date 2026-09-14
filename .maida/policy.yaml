@@ -1,4 +1,5 @@
-assert:
-  no_loops: true
-  no_guardrails: true
-  expect_status: ok
+version: 2
+metrics:
+  no_loops: {kind: invariant, require: true}
+  no_guardrails: {kind: invariant, require: true}
+  stop_condition_reached: {kind: invariant, require: true}
