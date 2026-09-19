@@ -431,7 +431,7 @@ def test_public_files_use_current_branding():
 
 def test_readme_documents_write_back_security_and_dispatch_contract():
     readme = README_PATH.read_text()
-    assert "maida-ai/maida-assert/write-back@v5" in readme
+    assert "maida-ai/maida-assert/write-back@" in readme
     assert "contents: write" in readme
     assert "same-repository pull requests only" in readme
     assert "maida_baseline_updated" in readme
@@ -443,7 +443,7 @@ def test_readme_documents_write_back_security_and_dispatch_contract():
 
 def test_readme_documents_authorized_accept_command_workflow():
     readme = README_PATH.read_text()
-    assert "maida-ai/maida-assert/accept-command@v5" in readme
+    assert "maida-ai/maida-assert/accept-command@" in readme
     assert "issue_comment" in readme
     assert "accept-command-enabled: 'true'" in readme
     assert "/maida accept [optional reason]" in readme
@@ -460,3 +460,29 @@ def test_readme_documents_langfuse_trace_command_without_inline_secrets():
     assert "exactly one completed Maida run" in readme
     assert "fixed one-trial gate" in readme
     assert "Do not build `trace-command` from pull-request-controlled text" in readme
+
+
+def test_acceptance_workflow_has_a_read_only_candidate_job_and_fresh_writer():
+    import re
+    workflows = [yaml.safe_load(block) for block in re.findall(r"```yaml\n(.*?)```", README_PATH.read_text(), re.S)]
+    workflow = next(w for w in workflows if w.get("name") == "Accept Maida Baseline")
+    jobs = workflow["jobs"]
+    assert set(jobs) == {"authorize", "capture", "write"}
+    assert workflow["permissions"] == {}
+    assert jobs["capture"]["permissions"] == {"contents": "read"}
+    assert jobs["authorize"]["permissions"]["contents"] == "read"
+    assert jobs["write"]["permissions"]["contents"] == "write"
+    assert all(job["runs-on"] == "ubuntu-latest" for job in jobs.values())
+    checkout = jobs["capture"]["steps"][0]
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["with"]["ref"] == "${{ needs.authorize.outputs.head-sha }}"
+    writer_steps = jobs["write"]["steps"]
+    assert not any("checkout@" in step.get("uses", "") or "run" in step for step in writer_steps)
+    assert writer_steps[-1]["with"]["context"] == "${{ needs.authorize.outputs.context }}"
+    upload = jobs["capture"]["steps"][-1]["with"]
+    download = writer_steps[0]["with"]
+    assert upload["name"] == download["name"]
+    assert "github.run_id" in upload["name"] and "github.run_attempt" in upload["name"]
+    assert "run-id" not in download and "github-token" not in download
+    assert upload["path"].endswith("/acceptance.json")
+    assert all("secrets." not in str(step) for step in jobs["capture"]["steps"])
