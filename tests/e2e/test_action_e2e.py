@@ -6,7 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from harness import Composite, Consumer, GitHubFixture
+from harness import Composite, Consumer, GitHubFixture, acceptance
 
 
 @pytest.fixture
@@ -51,7 +51,9 @@ def snapshot(name, text, directory, result):
         )
     (directory / "comment.actual.md").write_text(text)
     expected = Path(__file__).parent / "snapshots" / f"{name}.md"
-    expected_text = expected.read_text().replace("<base-sha>", result.steps["trust"]["outputs"]["base_sha"])
+    expected_text = expected.read_text().replace(
+        "<base-sha>", result.steps["trust"]["outputs"]["base_sha"]
+    )
     # Bind expected CLI links to the actual trusted snapshot; do not hide content drift.
     baseline = result.steps["trust"]["outputs"]["baseline"]
     cli, suffix = expected_text.split("\n---\n\n### Accept this intentional change", 1)
@@ -121,16 +123,7 @@ def test_accept_command_and_rerun(consumer, authorized):
     assert len(consumer.api.comments) == 1, failed.logs
     comment_id = consumer.api.comments[0]["id"]
     consumer.api.permission = "write" if authorized else "read"
-    result = Composite(
-        consumer,
-        "accept-command/action.yml",
-        {
-            "agent-script": "agent.py",
-            "baseline": "baseline.json",
-            "policy": "policy.yaml",
-            "github-token": "fixture-token",
-        },
-    ).run()
+    result = acceptance(consumer)
     assert not result.failed, result.logs
     if not authorized:
         assert result.steps["prepare"]["outputs"]["authorized"] == "false"
@@ -142,6 +135,8 @@ def test_accept_command_and_rerun(consumer, authorized):
         assert "requires write access" in consumer.api.comments[-1]["body"]
         return
     assert result.steps["write-back"]["outputs"]["changed"] == "true"
+    consumer.run("git", "fetch", "origin", "candidate")
+    consumer.run("git", "merge", "--ff-only", "origin/candidate")
     consumer.update_head()
     assert consumer.api.head != original_head
     assert (
@@ -161,17 +156,19 @@ def test_accept_command_and_rerun(consumer, authorized):
         == consumer.api.head
     )
     baseline = json.loads((consumer.root / "baseline.json").read_text())
-    acceptance = baseline["acceptance"]
-    assert acceptance["reason"] == "intentional retry"
+    provenance = baseline["acceptance"]
+    assert provenance["reason"] == "intentional retry"
     assert (
-        acceptance["previous_baseline"]["sha256"]
+        provenance["previous_baseline"]["sha256"]
         == sha256(original_baseline).hexdigest()
     )
-    assert acceptance["source"]["commit_sha"] == original_head
+    assert provenance["source"]["commit_sha"] == original_head
     assert consumer.api.dispatches[-1]["client_payload"]["sha"] == consumer.api.head
     unapproved = gate(consumer)
     assert unapproved.failed, unapproved.logs
-    context = json.loads(Path(unapproved.steps["trust"]["outputs"]["context"]).read_text())
+    context = json.loads(
+        Path(unapproved.steps["trust"]["outputs"]["context"]).read_text()
+    )
     rerun = gate(consumer, **{"configuration-acceptance": context["acceptance"]})
     assert not rerun.failed, rerun.logs
     assert consumer.api.checks[-1]["conclusion"] == "success"
@@ -238,7 +235,10 @@ def test_candidate_cannot_weaken_its_evaluation(consumer, change):
     assert result.failed, result.logs
     assert result.steps["check"]["outputs"]["verdict"] == "fail"
     assert consumer.api.checks[-1]["conclusion"] == "failure"
-    assert "Configuration change requires explicit acceptance" in consumer.api.checks[-1]["output"]["summary"]
+    assert (
+        "Configuration change requires explicit acceptance"
+        in consumer.api.checks[-1]["output"]["summary"]
+    )
 
 
 def test_configuration_acceptance_is_invalidated_by_next_commit(consumer):
@@ -320,3 +320,92 @@ def test_missing_new_sidecar_cannot_reuse_previous_success(consumer):
     assert "could not read Maida report" in "".join(result.logs)
     assert len(consumer.api.checks) == count
     assert "Incomplete report" not in consumer.api.comments[0]["body"]
+
+
+def test_planted_candidate_has_no_write_credential_and_cannot_inject_writer(consumer):
+    consumer.regress()
+    planted = """import os, pathlib, runpy, subprocess
+assert not os.environ.get("GITHUB_TOKEN")
+assert not os.environ.get("GH_TOKEN")
+credentials = subprocess.run(["git", "config", "--local", "--get-regexp", "extraheader|credential"], capture_output=True, text=True)
+assert not credentials.stdout
+assert not pathlib.Path("../trusted-writer").exists()
+runpy.run_path("agent.py", run_name="__main__")
+# A candidate-controlled writer module must never be imported on the writer.
+pathlib.Path("accept_artifact.py").write_text("raise RuntimeError('planted module executed')")
+pathlib.Path(".git/hooks/pre-commit").write_text("#!/bin/sh\\nexit 99\\n")
+pathlib.Path(".git/hooks/pre-commit").chmod(0o755)
+"""
+    (consumer.root / "planted.py").write_text(planted)
+    consumer.run("git", "add", "planted.py")
+    consumer.run("git", "commit", "-m", "Plant credential and writer injection probes")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    result = acceptance(consumer, agent_script="planted.py")
+    assert not result.failed, result.logs
+    assert result.steps["write-back"]["outputs"]["changed"] == "true"
+    assert (
+        consumer.run(
+            "git",
+            "--git-dir",
+            str(consumer.remote),
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            consumer.api.head,
+        ).stdout.strip()
+        == "baseline.json"
+    )
+
+
+def test_candidate_extra_staged_file_rejects_before_write(consumer):
+    (consumer.root / "planted.py").write_text(
+        'import pathlib, subprocess\npathlib.Path("extra.txt").write_text("planted")\nsubprocess.run(["git", "add", "extra.txt"], check=True)\n'
+    )
+    consumer.run("git", "add", "planted.py")
+    consumer.run("git", "commit", "-m", "Plant staged file")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    head = consumer.api.head
+    result = acceptance(consumer, agent_script="planted.py")
+    assert result.failed
+    assert "extra staged files" in "\n".join(result.logs)
+    assert consumer.api.head == head
+    assert not consumer.api.dispatches
+
+
+def test_capture_missing_run_rejects_before_write(consumer):
+    (consumer.root / "empty.py").write_text('print("no trace")\n')
+    consumer.run("git", "add", "empty.py")
+    consumer.run("git", "commit", "-m", "Missing trace")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    result = acceptance(consumer, agent_script="empty.py")
+    assert result.failed
+    assert "exactly one completed" in "\n".join(result.logs)
+    assert not consumer.api.dispatches
+
+
+def test_accept_current_baseline_dispatches_without_commit(consumer):
+    head = consumer.api.head
+    result = acceptance(consumer)
+    assert not result.failed, result.logs
+    assert result.steps["write-back"]["outputs"]["changed"] == "false"
+    assert consumer.api.head == head
+    assert consumer.api.dispatches[-1]["client_payload"]["sha"] == head
+
+
+def test_accept_changed_policy_rejects_before_candidate_checkout(consumer):
+    with (consumer.root / "policy.yaml").open("a") as policy:
+        policy.write("\n# Candidate policy change\n")
+    consumer.run("git", "add", "policy.yaml")
+    consumer.run("git", "commit", "-m", "Change candidate policy")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    result = acceptance(consumer)
+    assert result.failed
+    assert "Changed policy" in "\n".join(result.logs)
+    assert "Traceback" not in "\n".join(result.logs)
+    assert not (consumer.root.parent / "capture").exists()
+    assert not consumer.api.dispatches

@@ -105,6 +105,9 @@ def prepare_command(
     api_url: str,
     token: str,
     output_path: Path,
+    policy: str = "",
+    run_id: str = "",
+    run_attempt: str = "",
 ) -> None:
     issue = event.get("issue") or {}
     comment = event.get("comment") or {}
@@ -192,9 +195,38 @@ def prepare_command(
     if not head_branch or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
         raise CommandError("GitHub returned invalid PR head metadata.")
 
+    context_output = {}
+    if policy:
+        # Only imported from the reviewed Action directory, never PR code.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from accept_artifact import CommandError as ArtifactError, prepare_context
+
+        try:
+            context = prepare_context(
+                repository=repository,
+                pr_number=issue_number,
+                login=login,
+                reason=reason,
+                baseline=baseline,
+                policy=policy,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                comment_id=comment["id"],
+                api_url=api_url,
+                token=token,
+            )
+        except ArtifactError as exc:
+            raise CommandError(str(exc)) from exc
+        if context["head_sha"] != head_sha:
+            raise CommandError(
+                "PR head changed during authorization; retry the command."
+            )
+        context_output["context"] = json.dumps(context, separators=(",", ":"))
+
     _write_outputs(
         output_path,
         {
+            **context_output,
             "handled": "true",
             "authorized": "true",
             "reason": reason,
@@ -271,6 +303,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="operation", required=True)
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--baseline", default="")
+    prepare.add_argument("--policy", default="")
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--outcome", required=True)
     finalize.add_argument("--changed", default="false")
@@ -294,6 +327,9 @@ def main(
             prepare_command(
                 event=event,
                 baseline=args.baseline,
+                policy=args.policy,
+                run_id=environment.get("GITHUB_RUN_ID", ""),
+                run_attempt=environment.get("GITHUB_RUN_ATTEMPT", ""),
                 api_url=api_url,
                 token=token,
                 output_path=Path(_required_env(environment, "GITHUB_OUTPUT")),
@@ -311,7 +347,7 @@ def main(
                 run_id=_required_env(environment, "GITHUB_RUN_ID"),
             )
         return 0
-    except (CommandError, json.JSONDecodeError, OSError) as exc:
+    except (CommandError, ValueError, KeyError, TypeError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

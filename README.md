@@ -377,103 +377,154 @@ regression you have not inspected; fix the agent behavior instead.
 
 ## Accept an intentional change from a PR
 
-The `accept-command` sub-action turns an authorized
-`/maida accept [optional reason]` PR comment
-into a baseline-only bot commit. It checks the commenter's repository permission
-before checking out or running PR code. Users need write access. Fork pull requests
-are refused before checkout. A bare command records the commenter as
-the reason, while `/maida accept expected retrieval flow` records the trailing
-text.
+An authorized `/maida accept [optional reason]` comment can create a baseline-only
+bot commit. Users need write access. Fork pull requests are rejected before any
+candidate checkout. A bare command records the commenter as the reason.
 
-Add an `issue_comment` workflow on the default branch:
+**Migrate existing handlers:** the former single-job `accept-command` and
+`write-back` interfaces are retired. Authorization does not make candidate code
+safe to run with a write token. Use three separate GitHub-hosted jobs as below;
+these interfaces require an Action revision containing this migration. Replace
+`@main` with that reviewed full commit SHA before production use.
+
+Add this workflow on the default branch. Set the baseline, policy and agent path
+to your repository's files. Install any additional agent dependencies only in
+`capture`, using `uv`; never install candidate dependencies in `authorize` or
+`write`. The example explicitly uploads the candidate baseline data to a GitHub
+Actions artifact for one day; it uploads no raw traces or reports. Review what
+your baseline contains before enabling this opt-in workflow.
 
 ```yaml
 name: Accept Maida Baseline
 on:
   issue_comment:
     types: [created]
-
 permissions: {}
-
+concurrency:
+  group: maida-accept-${{ github.event.issue.number }}
+  cancel-in-progress: false
 jobs:
-  accept:
+  authorize:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/maida accept')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
+    outputs:
+      authorized: ${{ steps.command.outputs.authorized }}
+      context: ${{ steps.command.outputs.context }}
+      head-sha: ${{ steps.command.outputs.head-sha }}
     steps:
-      - uses: maida-ai/maida-assert/accept-command@v5
+      - id: command
+        uses: maida-ai/maida-assert/accept-command@main
         with:
-          agent-script: my_agent.py
+          stage: authorize
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
           github-token: ${{ github.token }}
+
+  capture:
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.authorize.outputs.head-sha }}
+          persist-credentials: false
+      - uses: maida-ai/maida-assert/capture-acceptance@main
+        with:
+          context: ${{ needs.authorize.outputs.context }}
+          agent-script: my_agent.py
+          artifact-directory: ${{ runner.temp }}/maida-acceptance
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: maida-accept-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/maida-acceptance/acceptance.json
+          if-no-files-found: error
+          retention-days: 1
+
+  write:
+    needs: [authorize, capture]
+    if: always() && needs.authorize.outputs.authorized == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.capture.result == 'success'
+        with:
+          name: maida-accept-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/maida-acceptance
+      - uses: maida-ai/maida-assert/write-back@main
+        if: always()
+        with:
+          context: ${{ needs.authorize.outputs.context }}
+          artifact-directory: ${{ runner.temp }}/maida-acceptance
+          github-token: ${{ github.token }}
 ```
 
-Enable the visible command hint in the normal gate step with
-`accept-command-enabled: 'true'`. The handler reruns exactly one configured
-trace source (`agent-script` or `trace-command`) and the assertion inputs,
-delegates the baseline-only commit to the write-back engine,
-and posts either a commit link, an already-current confirmation, or an
-actionable workflow failure. The write-back dispatch can request an observational rerun as described below.
-For blocking evaluation, separately approve the resulting configuration digest
-and use a fresh `pull_request` event for the new head. A push by `GITHUB_TOKEN`
-does not create that event; use a maintainer push or a separately authorized
-installation token workflow. The bot commit itself is never automatic merge
-authorization.
+Enable `accept-command-enabled: 'true'` in the normal gate step to show the command
+hint. Capture runs exactly one configured trace source (`agent-script` or
+`trace-command`), then `maida assert` against the authorized baseline and policy.
+An assertion exit of 1 is a reviewable behavioral failure; other nonzero exits
+stop capture. The capture job has only `contents: read`, no secrets, and no
+persisted checkout credentials. Do not grant it a PAT, installation token, OIDC
+permission, environment secrets, or access to a shared self-hosted runner. Do not
+combine these jobs or move candidate execution to `pull_request_target`.
 
 ## Baseline write-back engine
 
-The `write-back` sub-action is the mutation engine for an authorized PR command
-handler. It accepts a completed Maida run, commits only the configured baseline
-with the standard Actions bot identity, pushes it to the exact PR head branch,
-and requests a fresh report-only run. It supports same-repository pull requests only;
-fork PRs fail before the baseline is changed.
+The `write-back` sub-action consumes data in a fresh trusted job with **no
+candidate checkout, caches, dependencies or executable artifacts**. It supports
+same-repository pull requests only. Pass its `context` directly from the
+authorization job through `needs`, never from capture outputs or artifact content.
+The writer accepts only `acceptance.json` (up to 1 MiB); extra files, symlinks and
+incomplete baselines are rejected. The candidate's staged changes also reject
+capture; there is no Git index in the writer to mix into its commit.
 
-The handler job must check out the verified PR head SHA with the Actions token,
-run the traced agent so a completed run exists, and grant `contents: write`:
+Authorization binds the repository, PR, head and base SHA, baseline path and hash,
+policy path and hash, commenter, reason, comment ID, workflow run and attempt.
+The selected policy must match the PR base. Changed-policy, stale-head,
+closed-PR, revoked-permission and fork cases stop before updating the branch.
+The writer reads artifact bytes once, checks their binding, and replaces
+candidate-supplied acceptance metadata with trusted provenance. It commits only
+the configured existing baseline through the Git API, rechecks authorization and
+both refs immediately before updating the branch, and uses a non-force update.
+A concurrent forward update is rejected. GitHub does not offer an atomic update
+of both PR refs; required up-to-date checks remain necessary if the base moves
+after the last check.
 
-```yaml
-permissions:
-  contents: write
+Artifacts are **untrusted observations**, not proof that candidate code behaved
+honestly. JSON shape and binding checks do not certify the trace or produce a
+behavioral PASS. The baseline commit records the artifact digest and prior
+baseline/policy hashes so it can be reviewed. New configuration still needs the
+explicit configuration-acceptance mechanism above and fresh gate results for the
+resulting head; the bot commit never authorizes a merge.
 
-steps:
-  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-    with:
-      repository: ${{ steps.pr.outputs.head_repository }}
-      ref: ${{ steps.pr.outputs.head_sha }}
+The writer emits `maida_baseline_updated` to request an observational rerun,
+because pushes made with `GITHUB_TOKEN` do not trigger ordinary PR workflows.
+For a blocking evaluation, separately approve the resulting configuration digest
+and create a fresh `pull_request` event for the new head with a maintainer push or
+a separately authorized installation-token workflow. Existing results and
+acceptance values do not carry forward to that head.
 
-  # Install Maida and run the traced agent before this step.
-  - id: write-back
-    uses: maida-ai/maida-assert/write-back@v5
-    with:
-      baseline: baselines/my_agent.json
-      reason: ${{ steps.command.outputs.reason }}
-      pr-number: ${{ github.event.issue.number }}
-      head-repository: ${{ steps.pr.outputs.head_repository }}
-      head-branch: ${{ steps.pr.outputs.head_branch }}
-      expected-head-sha: ${{ steps.pr.outputs.head_sha }}
-      github-token: ${{ github.token }}
-```
-
-The action refuses a stale checkout and uses a normal, non-force push, so a
-concurrent update to the PR branch fails safely. It emits a
-`maida_baseline_updated` `repository_dispatch` after acceptance because pushes
-made with `GITHUB_TOKEN` do not trigger ordinary workflow runs. A workflow on
-the default branch must listen for that event and check out the dispatched SHA:
+An optional report-only listener on the default branch can render the new run:
 
 ```yaml
+name: Observe Accepted Maida Baseline
 on:
   repository_dispatch:
     types: [maida_baseline_updated]
-
 permissions:
   contents: read
   checks: write
-
 jobs:
   agent-check:
     if: github.event.client_payload.pr_number != ''
@@ -482,6 +533,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.client_payload.sha }}
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           agent-script: my_agent.py
@@ -490,11 +542,11 @@ jobs:
           mode: report-only
 ```
 
-The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`. If a
-push succeeds but dispatch fails, rerun the authorized command: an unchanged
-baseline creates no duplicate commit but still requests the fresh gate.
-GitHub associates the dispatch workflow itself with the default-branch SHA, so
-the Action binds its observational check to the actual checkout SHA. Blocking
+The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`. If the
+baseline commit succeeds but dispatch fails, the error identifies the written
+head. Request acceptance again against the latest head; an unchanged artifact
+creates no duplicate commit and still requests fresh results. GitHub associates
+the dispatch workflow itself with the default-branch SHA. Blocking
 mode rejects dispatch events; do not treat a dispatch report as PR authorization.
 
 When `maida run` reports failed checks, the action still publishes the
@@ -518,9 +570,13 @@ and the pinned sticky-comment Action against a temporary consumer Git repository
 It tests PASS/success, FAIL/failure, blocking INCONCLUSIVE/failure, report-only
 neutral results, base-policy selection, configuration acceptance and invalidation,
 trace-command ingestion, setup errors, and read-only check publication.
-Authorized acceptance runs the real CLI, creates a baseline-only commit, pushes
-to a local bare repository, requests a rerun through a local API fixture, and
-reruns the gate. The sticky Action must update the existing comment in place.
+Authorized acceptance runs the real CLI in a separate checkout and consumes only
+artifact bytes in a fresh writer directory. The local Git API fixture creates a
+baseline-only commit in a bare repository, requests a rerun, and reruns the gate.
+Planted candidate code probes credential exposure and writer-module injection;
+extra staged files, stale bindings, and policy changes are rejected. These local
+tests simulate the job boundary; they do not prove GitHub runner isolation or
+artifact-service permissions. The sticky Action must update the existing comment in place.
 Snapshots compare the complete posted Markdown, normalizing only trace IDs and binding expected reproduction paths to the actual
 trusted snapshot;
 the agent fixture supplies fixed recorded timing. All agent behavior is simulated.

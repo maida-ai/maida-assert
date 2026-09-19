@@ -1,0 +1,48 @@
+name: 'Maida Acceptance Capture'
+description: 'Produce untrusted acceptance data in a separate job with contents read permission only'
+inputs:
+  context:
+    description: 'Authorization context from the authorize job'
+    required: true
+  agent-script:
+    description: 'Python script that runs the traced agent; choose this or trace-command'
+    default: ''
+  trace-command:
+    description: 'Configured command that produces one completed run; never include write credentials'
+    default: ''
+  artifact-directory:
+    description: 'New directory for acceptance.json, outside the candidate checkout'
+    required: true
+  maida-version:
+    description: 'Released Maida version, vVERSION'
+    default: 'v0.5.3'
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.12'
+    - name: Set up uv
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      with:
+        enable-cache: 'false'
+    - name: Install Maida
+      shell: bash
+      env:
+        MAIDA_VERSION: '${{ inputs.maida-version }}'
+      run: |
+        if [[ ! "$MAIDA_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.]+)?$ ]]; then
+          echo 'Use a released Maida version, vVERSION.'
+          exit 2
+        fi
+        uv pip install --system "maida-ai==${MAIDA_VERSION:1}"
+    - name: Produce completed run
+      shell: bash
+      env:
+        MAIDA_ACCEPT_CONTEXT: '${{ inputs.context }}'
+        AGENT_SCRIPT: '${{ inputs.agent-script }}'
+        TRACE_COMMAND: '${{ inputs.trace-command }}'
+        MAIDA_ARTIFACT_DIRECTORY: '${{ inputs.artifact-directory }}'
+        MAIDA_CAPTURE_ACTION_PATH: '${{ github.action_path }}'
+      run: python3 -I "$MAIDA_CAPTURE_ACTION_PATH/../scripts/capture_acceptance.py"

@@ -159,9 +159,7 @@ def test_prepare_replies_to_malformed_command(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("permission", ["read", "none"])
-def test_prepare_politely_refuses_unauthorized_users(
-    tmp_path, monkeypatch, permission
-):
+def test_prepare_politely_refuses_unauthorized_users(tmp_path, monkeypatch, permission):
     module = _load_module()
     output = tmp_path / "output"
     comments = []
@@ -371,42 +369,14 @@ def test_main_returns_error_for_missing_environment(capsys):
     assert "GITHUB_EVENT_PATH" in capsys.readouterr().err
 
 
-def test_accept_command_action_checks_authorization_before_checkout():
-    assert ACTION_PATH.is_file()
+def test_accept_command_authorization_never_checks_out_or_runs_candidate():
     action = yaml.safe_load(ACTION_PATH.read_text())
-    inputs = action["inputs"]
-    for name in (
-        "agent-script",
-        "trace-command",
-        "baseline",
-        "policy",
-        "maida-version",
-        "python-version",
-        "extra-args",
-        "github-token",
-    ):
-        assert name in inputs
-
+    assert action["inputs"]["stage"]["required"]
+    assert "agent-script" not in action["inputs"]
+    assert set(action["outputs"]) == {"authorized", "context", "head-sha"}
     steps = action["runs"]["steps"]
-    prepare_index = next(i for i, step in enumerate(steps) if step.get("id") == "prepare")
-    checkout_index = next(
-        i for i, step in enumerate(steps) if step.get("name") == "Check out verified PR head"
-    )
-    run_index = next(
-        i for i, step in enumerate(steps) if step.get("name") == "Produce completed run"
-    )
-    write_index = next(i for i, step in enumerate(steps) if step.get("id") == "write-back")
-    finalize_index = next(i for i, step in enumerate(steps) if step.get("name") == "Report command result")
-
-    assert prepare_index < checkout_index < run_index < write_index < finalize_index
-    assert steps[checkout_index]["if"] == "steps.prepare.outputs.authorized == 'true'"
-    assert steps[run_index]["if"] == "steps.prepare.outputs.authorized == 'true'"
-    assert "Pass exactly one of agent-script or trace-command" in steps[run_index]["run"]
-    assert 'python "$AGENT_SCRIPT"' in steps[run_index]["run"]
-    assert 'bash -o pipefail -c "$TRACE_COMMAND"' in steps[run_index]["run"]
-    assert "MAIDA_DATA_DIR" in steps[run_index]["run"]
-    assert "exactly one completed Maida run" in steps[run_index]["run"]
-    assert '["maida", "list", "--json"]' in steps[run_index]["run"]
-    assert "always()" in steps[finalize_index]["if"]
-    assert steps[finalize_index]["env"]["WRITE_BACK_OUTCOME"] == "${{ steps.write-back.outcome }}"
-    assert action["outputs"]["commit-sha"]["value"] == "${{ steps.write-back.outputs.commit-sha }}"
+    assert len(steps) == 1
+    assert steps[0]["id"] == "prepare"
+    assert "python3 -I" in steps[0]["run"]
+    assert "three-job acceptance workflow" in steps[0]["run"]
+    assert '--policy "$MAIDA_POLICY"' in steps[0]["run"]

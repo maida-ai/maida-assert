@@ -9,6 +9,7 @@ on:
       - README.md
       - action.yml
       - accept-command/**
+      - capture-acceptance/**
       - examples/**
       - requirements-dev.txt
       - scripts/**
