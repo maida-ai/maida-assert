@@ -37,9 +37,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -62,7 +62,11 @@ jobs:
       checks: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       # Uses the local composite action (./action.yml) so CI always
       # tests the version checked into this branch.
@@ -71,4 +75,5 @@ jobs:
           agent-script: examples/ci_dummy_agent.py
           policy: .maida/policy.yaml
           maida-version: 'v0.5.3'
+          mode: ${{ github.event_name == 'pull_request' && 'blocking' || 'report-only' }}
           post-comment: 'true'

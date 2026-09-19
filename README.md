@@ -4,7 +4,9 @@ A GitHub Action that runs the [`maida`](https://github.com/maida-ai/maida)
 statistical gate against your AI agent on every PR. It executes your traced
 agent script in isolated trials, compares the resulting runs to a baseline and
 policy, and posts a Markdown regression report as a sticky PR comment. The job
-fails if any check regresses.
+defaults to blocking mode: FAIL, INCONCLUSIVE, unaccepted configuration changes,
+and setup/publication errors fail the job. Explicit report-only mode is available
+for observation without merge authorization.
 
 The report leads with a pass/fail/inconclusive verdict, shows top behavior changes
 (steps, tool path, loops/cycles, guardrails, terminal state, latency/cost,
@@ -16,7 +18,10 @@ For baseline failures, the local reproduction hint also shows the explicit
 `maida accept --reason ...` path to use only after the change is inspected and
 intentional.
 
-Tip: scaffold this workflow with [`maida init --github`](https://github.com/maida-ai/maida).
+If you scaffold with [`maida init --github`](https://github.com/maida-ai/maida),
+apply the checkout and protection settings below; older CLI templates do not
+include them. These blocking-mode inputs require an Action revision containing
+this change. Pin the reviewed Action revision by full commit SHA in production.
 
 ## Usage
 
@@ -37,7 +42,11 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           agent-script: my_agent.py
@@ -52,22 +61,98 @@ it must create exactly one completed Maida run.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
+| `mode` | no | `blocking` | `blocking` evaluates the trusted PR base policy; `report-only` observes candidate configuration and never authorizes merging. |
+| `configuration-acceptance` | no | `''` | Maintainer-controlled `base-SHA:head-SHA:configuration-SHA256` value for a reviewed configuration change. Never read it from PR content. |
 | `agent-script` | one trace source | `''` | Path to the Python script that runs the agent. The script must use `@trace` or `traced_run()` so a run is recorded. |
 | `trace-command` | one trace source | `''` | Trusted shell command that creates exactly one completed Maida run, such as an importer invocation. Do not include secrets in the command. |
 | `baseline` | no | `''` | Path to a baseline JSON file produced by `maida baseline`. If omitted, only the policy is enforced. |
-| `policy` | no | `.maida/policy.yaml` | Path to a policy YAML file. |
+| `policy` | no | `.maida/policy.yaml` | Repository-relative path, required on the trusted base in blocking mode. |
 | `maida-version` | no | `v0.5.3` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
-| `extra-args` | no | `''` | Additional CLI arguments forwarded to `maida run` (for example, `--trials 5 --max-steps 20`). CLI flags override policy values. |
+| `extra-args` | no | `''` | Report-only CLI overrides (for example, `--trials 5 --max-steps 20`). Blocking mode rejects overrides; edit the base policy through review. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
 
-**Note:** `checks: write` publishes the stable `Maida statistical gate` check.
-`PASS` maps to success, `FAIL` to failure, and `INCONCLUSIVE` to neutral. If
-the token is read-only, as it commonly is for forked PRs, publication emits a
-warning without changing the gate verdict. When `post-comment` is `true` on a
-`pull_request` event, `pull-requests: write` is also required for the sticky
-comment.
-More details can be found in the [GitHub Actions documentation](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#permissions) and [sticky-pull-request-comment documentation](https://github.com/marocchino/sticky-pull-request-comment#error-resource-not-accessible-by-integration).
+### Blocking mode and required repository settings
+
+Blocking mode supports `pull_request` events with a clean checkout of the exact
+PR head and the base commit available locally (`fetch-depth: 0`). The Action
+makes no Git fetches. It snapshots policy and baseline blobs from
+`github.event.pull_request.base.sha` outside the candidate workspace, and
+publishes results only against the evaluated head SHA. A missing base, policy,
+baseline, report, trace evidence, or an invalid report stops evaluation. Setup
+errors do not publish a behavioral verdict or an empty comment.
+
+The `Maida statistical gate` check reports PASS/success, FAIL/failure, and
+INCONCLUSIVE/failure. The CLI's three-valued report stays intact; a separate
+Action merge decision explains configuration and authorization. Process health
+alone and report-only metrics do not establish a behavioral PASS for merging.
+
+Configure branch protection to require **both** the workflow job (`agent-check`
+in the examples) and **Maida statistical gate**, with branches required to be
+up to date. Require fresh reviews on new commits and code-owner review for
+`.github/workflows/`, the gate's scripts/dependencies, policy, baselines, and the
+CODEOWNERS file itself. Protect these controls from bypass and use distinct job
+names. A skipped job is not an enforcement substitute; keep the required gate
+unconditional, without path filters or `continue-on-error`. See GitHub's
+[required-check semantics](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
+
+`checks: write` is required to publish the named check. Publication failure fails
+a blocking job even when behavior passes. Fork/read-only tokens therefore cannot
+produce a blocking success through this Action; do not switch to
+`pull_request_target` with candidate execution to work around permissions.
+`pull-requests: write` is needed only for the optional sticky comment; comment
+failure does not erase a check result. A previous result belongs to its old
+commit, and an updated base requires fresh evaluation.
+
+The workflow, Action revision, CLI installation, agent harness and its dependencies
+must be trusted to execute on the runner. This composite Action is not a sandbox
+against hostile code with the same filesystem and process privileges. In
+particular, do not expose a privileged token to arbitrary candidate code. The
+controls above are dependencies of the intended merge boundary, not protection
+against an attacker who can replace the workflow or forge reports on that runner.
+
+### Explicit configuration acceptance
+
+Any change under `.maida/`, or to the configured policy/baseline outside that
+directory, is a separate gated configuration event. Candidate policy is never
+used to grade that same candidate, even after acceptance. By default the baseline
+also comes from the base. Files must be regular tracked files, not symlinks or
+submodules. Establish the initial policy and baseline on the base branch before
+using blocking mode.
+
+For an intentional change, review the complete diff and the initial blocking
+report. A maintainer can set a protected repository variable
+`MAIDA_CONFIGURATION_ACCEPTANCE` to the `base-SHA:head-SHA:configuration-SHA256`
+value printed by **Resolve trusted evaluation inputs**, and pass it from the
+trusted workflow:
+
+```yaml
+          configuration-acceptance: ${{ vars.MAIDA_CONFIGURATION_ACCEPTANCE }}
+```
+
+Restrict who can edit that variable and the workflow that supplies it; never
+accept a value from a PR file, comment, title, artifact, or dispatch payload.
+The digest covers file paths, modes, and SHA-256 hashes of all relevant candidate
+configuration, including baseline content. Rerun that PR evaluation after review.
+Matching acceptance clears only the configuration event and selects the reviewed
+candidate baseline. Policy still comes from the base, so a policy relaxation
+cannot excuse a behavioral failure in the same PR. A policy-only change that
+passes the existing policy can succeed through this route. If a relaxation is
+needed for subsequent agent work, review it in a separate policy PR first.
+
+A new head or base commit, or a different configuration digest, invalidates
+acceptance and fails closed. Clear the variable after merging; review again for
+the next change. Baseline JSON provenance and `/maida accept` comments are not
+credentials and cannot substitute for this approval.
+
+### Report-only mode
+
+Set `mode: report-only` for experiments, schedules, dispatches, and other
+non-PR events. It reads the candidate checkout and publishes the distinct
+**Maida behavioral report (non-blocking)** check as neutral for every valid
+behavioral verdict. FAIL and INCONCLUSIVE remain visible. Missing or malformed
+inputs/evidence still fail the job; check-publication errors warn. Never require
+this observational check as a merge gate.
 
 ## Example workflows
 
@@ -91,16 +176,20 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           agent-script: my_agent.py
 ```
 
-### Baseline regression check with inline overrides
+### Report-only baseline comparison with inline overrides
 
-Override the trial count and a threshold via `extra-args`, and assert against a
-committed baseline:
+For an observational run, override the trial count and a threshold via
+`extra-args`. This workflow is not a blocking gate:
 
 ```yaml
 name: Agent Regression Check
@@ -116,7 +205,11 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           agent-script: examples/my_agent.py
@@ -124,6 +217,7 @@ jobs:
           policy: .maida/policy.yaml
           maida-version: 'v0.5.3'
           python-version: '3.11'
+          mode: report-only
           extra-args: --trials 5 --max-steps 20
 ```
 
@@ -150,7 +244,11 @@ jobs:
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
       LANGFUSE_TRACE_ID: ${{ vars.LANGFUSE_TRACE_ID }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           trace-command: maida import langfuse --trace-id "$LANGFUSE_TRACE_ID"
@@ -159,7 +257,9 @@ jobs:
 ```
 
 The command must create exactly one completed Maida run. Imported traces use a
-fixed one-trial gate: do not add `--trials` to `extra-args`. Import a single
+fixed one-trial gate: do not add `--trials` to `extra-args`. Blocking mode
+requires `trials: 1` in the trusted base policy; it refuses to override a larger
+trial budget. Import a single
 trace ID rather than a range or query that can create multiple runs. Policies
 that require several statistical trials should continue to use `agent-script`.
 
@@ -188,11 +288,15 @@ jobs:
   agent-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: maida-ai/maida-assert@v5
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
+          mode: report-only
           post-comment: 'false'
 ```
 
@@ -232,8 +336,9 @@ metrics:
     mode: report_only
 ```
 
-CLI flags passed via `extra-args` always override values from the
-policy file.
+CLI flags passed via `extra-args` override policy values only in report-only
+mode. In blocking mode, budgets and thresholds come from the reviewed base
+policy; overrides are rejected.
 
 ## Running the Maida statistical gate locally
 
@@ -313,15 +418,19 @@ Enable the visible command hint in the normal gate step with
 trace source (`agent-script` or `trace-command`) and the assertion inputs,
 delegates the baseline-only commit to the write-back engine,
 and posts either a commit link, an already-current confirmation, or an
-actionable workflow failure. The write-back dispatch still requires the normal
-gate workflow to listen for `maida_baseline_updated` as described below.
+actionable workflow failure. The write-back dispatch can request an observational rerun as described below.
+For blocking evaluation, separately approve the resulting configuration digest
+and use a fresh `pull_request` event for the new head. A push by `GITHUB_TOKEN`
+does not create that event; use a maintainer push or a separately authorized
+installation token workflow. The bot commit itself is never automatic merge
+authorization.
 
 ## Baseline write-back engine
 
 The `write-back` sub-action is the mutation engine for an authorized PR command
 handler. It accepts a completed Maida run, commits only the configured baseline
 with the standard Actions bot identity, pushes it to the exact PR head branch,
-and requests a fresh gate run. It supports same-repository pull requests only;
+and requests a fresh report-only run. It supports same-repository pull requests only;
 fork PRs fail before the baseline is changed.
 
 The handler job must check out the verified PR head SHA with the Actions token,
@@ -332,7 +441,7 @@ permissions:
   contents: write
 
 steps:
-  - uses: actions/checkout@v7
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
     with:
       repository: ${{ steps.pr.outputs.head_repository }}
       ref: ${{ steps.pr.outputs.head_sha }}
@@ -361,23 +470,32 @@ on:
   repository_dispatch:
     types: [maida_baseline_updated]
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   agent-check:
     if: github.event.client_payload.pr_number != ''
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.client_payload.sha }}
-      # Run the normal Maida gate against this checkout.
-      # Publish its conclusion against github.event.client_payload.sha.
+      - uses: maida-ai/maida-assert@v5
+        with:
+          agent-script: my_agent.py
+          baseline: baselines/my_agent.json
+          policy: .maida/policy.yaml
+          mode: report-only
 ```
 
 The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`. If a
 push succeeds but dispatch fails, rerun the authorized command: an unchanged
 baseline creates no duplicate commit but still requests the fresh gate.
 GitHub associates the dispatch workflow itself with the default-branch SHA, so
-the consuming command-handler workflow must publish the gate status or check
-against `client_payload.sha` for required PR checks to recognize the result.
+the Action binds its observational check to the actual checkout SHA. Blocking
+mode rejects dispatch events; do not treat a dispatch report as PR authorization.
 
 When `maida run` reports failed checks, the action still publishes the
 Markdown report and then exits `1`. Missing runs or baselines and internal
@@ -397,12 +515,14 @@ workflow file alone cannot configure branch protection.
 
 The local harness executes the composite shell steps, released `maida-ai==0.5.3`,
 and the pinned sticky-comment Action against a temporary consumer Git repository.
-It tests PASS/success, FAIL/failure, INCONCLUSIVE/neutral, trace-command ingestion,
-setup errors, read-only check publication, and authorized/unauthorized acceptance.
+It tests PASS/success, FAIL/failure, blocking INCONCLUSIVE/failure, report-only
+neutral results, base-policy selection, configuration acceptance and invalidation,
+trace-command ingestion, setup errors, and read-only check publication.
 Authorized acceptance runs the real CLI, creates a baseline-only commit, pushes
 to a local bare repository, requests a rerun through a local API fixture, and
 reruns the gate. The sticky Action must update the existing comment in place.
-Snapshots compare the complete posted Markdown, normalizing only trace IDs;
+Snapshots compare the complete posted Markdown, normalizing only trace IDs and binding expected reproduction paths to the actual
+trusted snapshot;
 the agent fixture supplies fixed recorded timing. All agent behavior is simulated.
 
 Install test dependencies and run the suites with `uv` (Python 3.12, Node 24,
@@ -423,17 +543,19 @@ runner expressions fail the suite. On snapshot failure, review the generated
 `consumer/comment.actual.md` before updating `tests/e2e/snapshots/`.
 CI retains fixture reports and API transcripts for seven days.
 
-The weekly/manual smoke uses a real GitHub runner, package installation, and
+The weekly/manual report-only smoke uses a real GitHub runner, package installation, and
 Checks API with the simulated agent: one trial, no test retries, five-minute
 job timeout, and **$0 model spend**. It requests no provider credentials and
 does not post comments. GitHub Actions minutes remain subject to the account's
 billing plan; the timeout bounds runtime, not a dollar charge.
 
 These tests do not establish merge-boundary enforcement. The scheduled smoke
-does not exercise live PR comments or acceptance. A disposable GitHub consumer
-with real branch protection is still needed to verify those paths, base-ref
-policy evaluation, acceptance binding to baseline hash and commit, and reviewed
-changes under `.maida/`. The current Action publishes INCONCLUSIVE as neutral,
-which does not block merging by itself. Protect `.github/workflows/` through
-CODEOWNERS with required review or equivalent repository rules; no local fixture
-can verify that configuration.
+does not exercise live PR comments, required checks, or acceptance. Before
+claiming enforcement, use a disposable GitHub consumer with the protection
+settings above and record the policy/base/head hashes, check IDs, job results,
+and actual merge attempts: PASS allowed; FAIL and gating INCONCLUSIVE refused;
+policy weakening/removal refused; accepted configuration change permitted only
+for its exact commit; subsequent commits blocked until reevaluated; and
+read-only/publication failures unable to authorize a merge. Verify workflow-file
+protection and required reviews on that repository too. No local fixture proves
+those GitHub settings. Live consumer verification remains outstanding.

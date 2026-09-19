@@ -1,6 +1,14 @@
 name: 'Maida Assert'
 description: 'Run Maida behavioral regression checks on agent traces'
 inputs:
+  mode:
+    description: 'blocking evaluates trusted PR base policy and requires decisive evidence; report-only never authorizes merge.'
+    required: false
+    default: 'blocking'
+  configuration-acceptance:
+    description: 'Maintainer-controlled base-SHA:head-SHA:configuration-SHA256 acceptance; never source from PR content.'
+    required: false
+    default: ''
   agent-script:
     description: 'Python script that runs the agent (must use @trace). Pass exactly one trace source.'
     required: false
@@ -14,7 +22,7 @@ inputs:
     required: false
     default: ''
   policy:
-    description: 'Path to policy YAML file.'
+    description: 'Repository-relative policy path, read from the PR base revision in blocking mode.'
     required: false
     default: '.maida/policy.yaml'
   maida-version:
@@ -30,7 +38,7 @@ inputs:
     required: false
     default: '3.12'
   extra-args:
-    description: 'Additional arguments to pass to maida run'
+    description: 'Additional maida run arguments in report-only mode; forbidden in blocking mode.'
     required: false
     default: ''
   post-comment:
@@ -58,25 +66,22 @@ runs:
           echo "Pass exactly one of agent-script or trace-command."
           exit 2
         fi
-        # At least one of baseline or policy must be provided
-        if [ -z "$BASELINE" ] && [ -z "$POLICY" ]; then
-          echo "Either baseline, policy, or both must be provided."
-          exit 1
-        fi
-        # If either is provided, the files must exist
-        if [ -n "$BASELINE" ] && [ ! -f "$BASELINE" ]; then
-          echo "Baseline file does not exist: $BASELINE"
-          exit 2
-        fi
-        if [ -n "$POLICY" ] && [ ! -f "$POLICY" ]; then
-          echo "Policy file does not exist: $POLICY"
-          exit 2
-        fi
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: ${{ inputs.python-version }}
+
+    - name: Resolve trusted evaluation inputs
+      id: trust
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        POLICY: ${{ inputs.policy }}
+        BASELINE: ${{ inputs.baseline }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        CONFIGURATION_ACCEPTANCE: ${{ inputs.configuration-acceptance }}
+      run: python "$GITHUB_ACTION_PATH/scripts/resolve_inputs.py"
 
     - name: Install Maida
       env:
@@ -102,10 +107,11 @@ runs:
       shell: bash
       id: gate
       env:
+        MODE: ${{ inputs.mode }}
         AGENT_SCRIPT: ${{ inputs.agent-script }}
         TRACE_COMMAND: ${{ inputs.trace-command }}
-        BASELINE: ${{ inputs.baseline }}
-        POLICY: ${{ inputs.policy }}
+        BASELINE: ${{ steps.trust.outputs.baseline }}
+        POLICY: ${{ steps.trust.outputs.policy }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
       run: |
         ARGS=()
@@ -138,13 +144,25 @@ runs:
             echo "The temporary trace-command runner is ignored by Git; choose repository ignore rules that allow the generated runner."
             exit 10
           fi
+          if [ "$MODE" = "blocking" ]; then
+            python - <<'PYTHON'
+        import os
+        from pathlib import Path
+        from maida.policy import load_policy
+        if load_policy(Path(os.environ["POLICY"])).trials != 1:
+            raise SystemExit("Blocking trace-command requires trials: 1 in the trusted base policy; use agent-script for multi-trial policies.")
+        PYTHON
+          fi
           ARGS+=(--trials 1)
         fi
+        # Never consume a sidecar left by a previous invocation.
+        : > maida-report.json
         set +e
         maida run "$RUN_TARGET" "${ARGS[@]}" \
           --format markdown --json-out maida-report.json > maida-report.md
         status=$?
         set -e
+        echo "status=$status" >> "$GITHUB_OUTPUT"
         if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
           echo "maida run exited with code $status and did not produce a statistical gate report."
           echo "Ensure the selected trace source records exactly one completed Maida run per trial."
@@ -155,18 +173,25 @@ runs:
       id: check
       shell: bash
       env:
-        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        HEAD_SHA: ${{ steps.trust.outputs.head_sha }}
+        MODE: ${{ inputs.mode }}
+        CONTEXT: ${{ steps.trust.outputs.context }}
+        CLI_STATUS: ${{ steps.gate.outputs.status }}
         DETAILS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         python "$GITHUB_ACTION_PATH/scripts/prepare_check.py" \
           --report maida-report.json \
           --output maida-check-payload.json \
           --head-sha "$HEAD_SHA" \
+          --mode "$MODE" --context "$CONTEXT" --markdown maida-report.md --cli-status "$CLI_STATUS" \
           --details-url "$DETAILS_URL" >> "$GITHUB_OUTPUT"
 
     - name: Add local reproduction hint
       shell: bash
       env:
+        MODE: ${{ inputs.mode }}
+        BASE_SHA: ${{ steps.trust.outputs.base_sha }}
+        BASELINE_REVISION: ${{ steps.trust.outputs.baseline_revision }}
         AGENT_SCRIPT: ${{ inputs.agent-script }}
         TRACE_COMMAND: ${{ inputs.trace-command }}
         BASELINE: ${{ inputs.baseline }}
@@ -200,17 +225,31 @@ runs:
           else
             printf "# Install Maida using the workflow version: %q\n" "$MAIDA_VERSION"
           fi
+          if [ "$MODE" = "blocking" ]; then
+            echo 'MAIDA_REPRO_DIR=$(mktemp -d)'
+            printf 'git show %q > "$MAIDA_REPRO_DIR/policy.yaml"\n' "$BASE_SHA:$POLICY"
+            if [ -n "$BASELINE" ]; then
+              printf 'git show %q > "$MAIDA_REPRO_DIR/baseline.json"\n' "$BASELINE_REVISION:$BASELINE"
+            fi
+          fi
           if [ -n "$AGENT_SCRIPT" ]; then
             printf "maida run %q" "$AGENT_SCRIPT"
           else
             echo "# Run the trace-command configured in the workflow with equivalent environment variables."
             printf "maida assert"
           fi
-          if [ -n "$BASELINE" ]; then
-            printf " --baseline %q" "$BASELINE"
-          fi
-          if [ -n "$POLICY" ]; then
-            printf " --policy %q" "$POLICY"
+          if [ "$MODE" = "blocking" ]; then
+            if [ -n "$BASELINE" ]; then
+              printf ' --baseline "$MAIDA_REPRO_DIR/baseline.json"'
+            fi
+            printf ' --policy "$MAIDA_REPRO_DIR/policy.yaml"'
+          else
+            if [ -n "$BASELINE" ]; then
+              printf " --baseline %q" "$BASELINE"
+            fi
+            if [ -n "$POLICY" ]; then
+              printf " --policy %q" "$POLICY"
+            fi
           fi
           if [ -n "$EXTRA_ARGS" ]; then
             printf " %s" "$EXTRA_ARGS"
@@ -257,16 +296,23 @@ runs:
       if: steps.publish-check.outcome == 'failure'
       shell: bash
       run: |
-        echo "::warning::Could not publish the 'Maida statistical gate' check. This is expected for forks or read-only tokens; the gate report and PR comment remain available."
+        echo "::warning::Could not publish the 'Maida statistical gate' check. Blocking mode will fail this job. Read-only/fork tokens cannot publish merge authorization; see README permissions and required-check setup."
 
     - name: Post PR comment if possible
       if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
       continue-on-error: true
-      uses: marocchino/sticky-pull-request-comment@v3.0.4
+      uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
       with:
         path: maida-report.md
 
     - name: Fail if assertions failed
       shell: bash
-      if: steps.check.outputs.verdict == 'fail'
-      run: exit 1
+      env:
+        MODE: ${{ inputs.mode }}
+        CONCLUSION: ${{ steps.check.outputs.conclusion }}
+        PUBLICATION: ${{ steps.publish-check.outcome }}
+      run: |
+        if [ "$MODE" = "blocking" ] && { [ "$CONCLUSION" != "success" ] || [ "$PUBLICATION" != "success" ]; }; then
+          echo "Maida blocking evaluation did not authorize this commit. Review the verdict, configuration acceptance, and check publication above."
+          exit 1
+        fi

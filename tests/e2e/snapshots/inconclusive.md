@@ -36,6 +36,15 @@ No behavior changed from the accepted baseline across the sampled trials.
 ---
 *Gated by [Maida](https://maida.ai) -- the local-first behavioral regression gate for AI agents.*
 
+
+### Action merge decision
+
+Mode: **blocking**. GitHub conclusion: **failure**.
+
+Only a behavioral PASS with accepted configuration and successful check publication can authorize this commit.
+
+Configuration: **unchanged**. Policy always comes from the trusted PR base. See the named check for revision and configuration hashes.
+
 ---
 
 ### Accept this intentional change
@@ -51,7 +60,10 @@ From this PR checkout, record a fresh local run and rerun the same assertion inp
 
 ```bash
 python -m pip install maida-ai==0.5.3
-maida run agent.py --baseline baseline.json --policy policy.yaml
+MAIDA_REPRO_DIR=$(mktemp -d)
+git show <base-sha>:policy.yaml > "$MAIDA_REPRO_DIR/policy.yaml"
+git show <base-sha>:baseline.json > "$MAIDA_REPRO_DIR/baseline.json"
+maida run agent.py --baseline "$MAIDA_REPRO_DIR/baseline.json" --policy "$MAIDA_REPRO_DIR/policy.yaml"
 ```
 
 Then run `maida view <local-id>` using the ID produced by your local run.

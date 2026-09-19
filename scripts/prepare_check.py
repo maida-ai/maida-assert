@@ -19,7 +19,7 @@ SEMANTIC_VERSION = re.compile(
 VERDICT_CONCLUSIONS = {
     "pass": "success",
     "fail": "failure",
-    "inconclusive": "neutral",
+    "inconclusive": "failure",
 }
 VERDICT_PASSED = {
     "pass": True,
@@ -68,7 +68,7 @@ def _summary_footer(
         lines.extend(
             [
                 "",
-                "This conclusion is neutral and does not block by itself. "
+                "Insufficient evidence is not a behavioral PASS. "
                 f"[Re-run this workflow]({details_url}) to collect a fresh trial set.",
             ]
         )
@@ -283,7 +283,8 @@ def _summary(report: dict[str, Any], details_url: str) -> str:
 
 
 def build_check_payload(
-    report: dict[str, Any], *, head_sha: str, details_url: str
+    report: dict[str, Any], *, head_sha: str, details_url: str,
+    mode: str = "blocking", configuration_blocked: bool = False,
 ) -> dict[str, Any]:
     """Validate *report* and return a completed Checks API request body."""
     if not _is_supported_report_version(report.get("report_version")):
@@ -301,15 +302,61 @@ def build_check_payload(
     if not isinstance(details_url, str) or not details_url:
         raise ReportError("details_url must be a non-empty string")
 
+    if mode not in {"blocking", "report-only"}:
+        raise ReportError("mode must be blocking or report-only")
+    summary = _summary(report, details_url)
+    legacy = report["report_version"] == LEGACY_REPORT_VERSION
+    metadata = report["metadata"]
+    used = metadata["trials_completed" if legacy else "trials_used"]
+    if used == 0 or metadata.get("abort_reason") is not None:
+        raise ReportError("missing trial evidence or aborted evaluation; rerun the gate")
+    trials = report.get("trials")
+    if not isinstance(trials, list) or len(trials) != used:
+        raise ReportError("trials must contain the reported number of observed trials")
+    identities = [trial.get("trace_id") if isinstance(trial, dict) else None for trial in trials]
+    if any(not isinstance(identity, str) or not identity for identity in identities):
+        raise ReportError("each observed trial must identify a trace")
+    if len(set(identities)) != used:
+        raise ReportError("observed trials must identify distinct traces")
+    gating = [r for r in report["aggregate_results"] if legacy or r["mode"] == "gating"]
+    for result in gating:
+        count = _non_negative_integer(
+            result.get("trials" if legacy else "trials_used"), "metric trials"
+        )
+        if count == 0 or count > used:
+            raise ReportError("gating metrics require observed trials within the report count")
+    if gating:
+        verdicts = {r["verdict"] for r in gating}
+        expected = "fail" if "fail" in verdicts else (
+            "inconclusive" if "inconclusive" in verdicts else "pass"
+        )
+        if verdict != expected:
+            raise ReportError("overall verdict is inconsistent with gating metrics")
+
+    name = CHECK_NAME
+    conclusion = VERDICT_CONCLUSIONS[verdict]
+    if not any(r["check_name"] != "agent_process" for r in gating):
+        conclusion = "failure"
+        summary += "\n\nNo gating metrics: report-only evidence cannot certify this change."
+    if configuration_blocked:
+        conclusion = "failure"
+        summary += "\n\nConfiguration change requires explicit acceptance for this commit."
+    if mode == "report-only":
+        name = "Maida behavioral report (non-blocking)"
+        conclusion = "neutral"
+        summary += "\n\nReport-only mode: this report is not merge authorization."
+    else:
+        summary += "\n\nBlocking mode: FAIL and INCONCLUSIVE prevent approval."
+
     return {
-        "name": CHECK_NAME,
+        "name": name,
         "head_sha": head_sha,
         "status": "completed",
-        "conclusion": VERDICT_CONCLUSIONS[verdict],
+        "conclusion": conclusion,
         "details_url": details_url,
         "output": {
-            "title": f"{CHECK_NAME}: {verdict.upper()}",
-            "summary": _summary(report, details_url),
+            "title": f"{name}: {verdict.upper()}",
+            "summary": summary,
         },
     }
 
@@ -320,6 +367,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--details-url", required=True)
+    parser.add_argument("--mode", choices=("blocking", "report-only"), default="blocking")
+    parser.add_argument("--context", type=Path)
+    parser.add_argument("--markdown", type=Path)
+    parser.add_argument("--cli-status", type=int, choices=(0, 1))
     return parser
 
 
@@ -332,9 +383,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not isinstance(report, dict):
         raise ReportError("Maida report root must be an object")
 
+    context = json.loads(args.context.read_text()) if args.context else None
+    if context is not None and context["head_sha"] != args.head_sha:
+        raise ReportError("evaluation context belongs to another commit")
     payload = build_check_payload(
-        report, head_sha=args.head_sha, details_url=args.details_url
+        report, head_sha=args.head_sha, details_url=args.details_url, mode=args.mode,
+        configuration_blocked=context["configuration_blocked"] if context else False,
     )
+    if context and args.mode == "blocking":
+        payload["output"]["summary"] += (
+            f"\n\nTrusted policy revision: `{context['base_sha']}`."
+            f"\n\nCandidate configuration SHA-256: `{context['configuration_sha256']}`."
+            f"\n\nConfiguration acceptance: {context['configuration_status']}."
+            f"\n\nEvaluated baseline SHA-256: `{context['baseline_sha256']}`."
+        )
+    if args.cli_status is not None and args.cli_status != int(report["verdict"] == "fail"):
+        raise ReportError("CLI exit status is inconsistent with the reported verdict")
+    if args.markdown:
+        if not args.markdown.read_text(encoding="utf-8").strip():
+            raise ReportError("CLI Markdown report is empty; refusing to publish")
+        with args.markdown.open("a", encoding="utf-8") as markdown:
+            markdown.write(
+                "\n\n### Action merge decision\n\n"
+                f"Mode: **{args.mode}**. GitHub conclusion: **{payload['conclusion']}**.\n\n"
+            )
+            if args.mode == "report-only":
+                markdown.write("This report is not merge authorization.\n")
+            else:
+                markdown.write("Only a behavioral PASS with accepted configuration and successful check publication can authorize this commit.\n")
+                if context:
+                    markdown.write(
+                        f"\nConfiguration: **{context['configuration_status']}**. "
+                        "Policy always comes from the trusted PR base. "
+                        "See the named check for revision and configuration hashes.\n"
+                    )
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"verdict={report['verdict']}")
     print(f"conclusion={payload['conclusion']}")
