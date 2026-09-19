@@ -15,11 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize(
     "case", ["new", "stale", "wrong_report", "wrong_head", "failed", "duplicate"]
 )
-def test_smoke_requires_a_new_successful_check_for_this_report(tmp_path, case):
+def test_smoke_requires_a_new_report_only_check_for_this_report(tmp_path, case):
     expected = {
-        "name": "Maida statistical gate",
+        "name": "Maida behavioral report (non-blocking)",
         "head_sha": "a" * 40,
-        "conclusion": "success",
+        "conclusion": "neutral",
         "details_url": "https://github.example/fixture/repo/actions/runs/100",
         "output": {
             "title": "PASS",

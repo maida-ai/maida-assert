@@ -37,7 +37,7 @@ def _report(verdict="pass", *, passed=True):
             "confidence_level": 0.95,
             "pass_rate_threshold": 0.90,
         },
-        "trials": [],
+        "trials": [{"trace_id": str(i)} for i in range(3)],
         "aggregate_results": [
             {
                 "check_name": "no_loops",
@@ -69,7 +69,7 @@ def _report_v2(verdict="pass", *, passed=True, report_version="2.0.0"):
             "stopping_rule": "fixed_n",
             "abort_reason": None,
         },
-        "trials": [],
+        "trials": [{"trace_id": str(i)} for i in range(3)],
         "aggregate_results": [
             {
                 "check_name": "no_loops",
@@ -125,7 +125,7 @@ def _report_v2(verdict="pass", *, passed=True, report_version="2.0.0"):
     [
         ("pass", True, "success"),
         ("fail", False, "failure"),
-        ("inconclusive", None, "neutral"),
+        ("inconclusive", None, "failure"),
     ],
 )
 def test_build_check_payload_maps_verdicts(verdict, passed, conclusion):
@@ -165,7 +165,7 @@ def test_summary_lists_assertion_verdict_interval_threshold_and_rerun_link():
     [
         ("pass", True, "success"),
         ("fail", False, "failure"),
-        ("inconclusive", None, "neutral"),
+        ("inconclusive", None, "failure"),
     ],
 )
 def test_build_check_payload_maps_v2_verdicts(verdict, passed, conclusion):
@@ -287,3 +287,85 @@ def test_cli_writes_payload_and_github_outputs(tmp_path, capsys):
         json.loads(payload_path.read_text(encoding="utf-8"))["conclusion"] == "failure"
     )
     assert capsys.readouterr().out == "verdict=fail\nconclusion=failure\n"
+
+
+@pytest.mark.parametrize("verdict,passed", [("pass", True), ("fail", False), ("inconclusive", None)])
+def test_report_only_mode_never_certifies_a_change(verdict, passed):
+    payload = build_check_payload(
+        _report_v2(verdict, passed=passed), head_sha="a" * 40,
+        details_url="https://example.invalid/run", mode="report-only",
+    )
+    assert payload["name"] == "Maida behavioral report (non-blocking)"
+    assert payload["conclusion"] == "neutral"
+    assert "not merge authorization" in payload["output"]["summary"]
+
+
+@pytest.mark.parametrize("bad_evidence", ["zero", "aborted", "contradictory", "unused"])
+def test_missing_or_contradictory_evidence_fails_closed(bad_evidence):
+    report = _report_v2()
+    if bad_evidence == "zero":
+        report["metadata"]["trials_used"] = 0
+    elif bad_evidence == "aborted":
+        report["metadata"]["abort_reason"] = "agent_crashed"
+    elif bad_evidence == "unused":
+        report["aggregate_results"][0]["trials_used"] = 0
+    else:
+        report["aggregate_results"][0]["verdict"] = "inconclusive"
+    with pytest.raises(ReportError):
+        build_check_payload(report, head_sha="a" * 40, details_url="https://example.invalid/run")
+
+
+def test_report_only_metrics_cannot_produce_blocking_success():
+    report = _report_v2()
+    report["aggregate_results"] = report["aggregate_results"][2:]
+    payload = build_check_payload(report, head_sha="a" * 40, details_url="https://example.invalid/run")
+    assert payload["conclusion"] == "failure"
+    assert "No gating metrics" in payload["output"]["summary"]
+
+
+def test_unaccepted_configuration_change_blocks_even_with_pass():
+    payload = build_check_payload(
+        _report_v2(), head_sha="a" * 40, details_url="https://example.invalid/run",
+        configuration_blocked=True,
+    )
+    assert payload["conclusion"] == "failure"
+    assert "PASS" in payload["output"]["title"]
+    assert "Configuration change requires explicit acceptance" in payload["output"]["summary"]
+
+
+@pytest.mark.parametrize("trials", [[], None, [{"trace_id": "same"}] * 3, [{}, {}, {}]])
+def test_invalid_trial_records_fail_closed(trials):
+    report = _report_v2()
+    report["trials"] = trials
+    with pytest.raises(ReportError):
+        build_check_payload(report, head_sha="a" * 40, details_url="https://example.invalid/run")
+
+
+def test_process_health_alone_does_not_certify_report_only_metrics():
+    report = _report_v2()
+    report["aggregate_results"][0]["check_name"] = "agent_process"
+    del report["aggregate_results"][1]
+    payload = build_check_payload(report, head_sha="a" * 40, details_url="https://example.invalid/run")
+    assert payload["conclusion"] == "failure"
+
+
+def test_cli_rejects_exit_status_conflicting_with_verdict(tmp_path):
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(_report_v2()))
+    output = tmp_path / "payload.json"
+    with pytest.raises(ReportError, match="exit status"):
+        main(["--report", str(report), "--output", str(output), "--head-sha", "a" * 40,
+              "--details-url", "https://example.invalid/run", "--cli-status", "1"])
+    assert not output.exists()
+
+
+def test_cli_rejects_empty_markdown_before_publishing(tmp_path):
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(_report_v2()))
+    markdown = tmp_path / "report.md"
+    markdown.write_text("")
+    output = tmp_path / "payload.json"
+    with pytest.raises(ReportError, match="Markdown report is empty"):
+        main(["--report", str(report), "--output", str(output), "--head-sha", "a" * 40,
+              "--details-url", "https://example.invalid/run", "--markdown", str(markdown)])
+    assert not output.exists()

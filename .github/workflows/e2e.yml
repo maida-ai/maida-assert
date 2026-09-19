@@ -77,6 +77,7 @@ jobs:
         with:
           agent-script: examples/ci_dummy_agent.py
           policy: .maida/policy.yaml
+          mode: report-only
           extra-args: --trials 1
           post-comment: 'false'
       - name: Verify the check was published for this run
@@ -95,5 +96,5 @@ jobs:
           # summary retains the workflow-run link and binds this attempt's output.
           matches = [c for c in checks if c['id'] not in previous_ids and c['name'] == expected['name'] and c['head_sha'] == expected['head_sha'] and all(c['output'][key] == expected['output'][key] for key in ('title', 'summary'))]
           assert len(matches) == 1, 'Expected one new check for this workflow attempt'
-          assert matches[0]['conclusion'] == 'success', matches[0]['conclusion']
+          assert matches[0]['conclusion'] == 'neutral', matches[0]['conclusion']
           PY

@@ -26,6 +26,7 @@ def test_accept_hint_preserves_literal_command(tmp_path):
             "EXTRA_ARGS": "",
             "MAIDA_VERSION": "v0.5.3",
             "ACCEPT_COMMAND_ENABLED": "true",
+            "MODE": "report-only",
         },
         text=True,
         capture_output=True,

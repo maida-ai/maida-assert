@@ -175,8 +175,9 @@ def test_gate_failure_is_reported_before_action_fails():
     assert check_step_index < fail_step_index
 
     fail_step = steps[fail_step_index]
-    assert fail_step["if"] == "steps.check.outputs.verdict == 'fail'"
-    assert fail_step["run"] == "exit 1"
+    assert '"$CONCLUSION" != "success"' in fail_step["run"]
+    assert '"$PUBLICATION" != "success"' in fail_step["run"]
+    assert '"$MODE" = "blocking"' in fail_step["run"]
 
 
 def test_action_report_uses_cli_generated_markdown_file():
@@ -437,7 +438,7 @@ def test_readme_documents_write_back_security_and_dispatch_contract():
     assert "github.event.client_payload.sha" in readme
     assert "github.event.client_payload.pr_number" in readme
     assert "default-branch SHA" in readme
-    assert "publish the gate status or check" in readme
+    assert "Blocking\nmode rejects dispatch events" in readme
 
 
 def test_readme_documents_authorized_accept_command_workflow():

@@ -218,6 +218,7 @@ class Consumer:
         self.run("git", "switch", "-c", "candidate")
         self.run("git", "push", "origin", "candidate")
         self.update_head()
+        self.base = self.api.head
         self._install_gh(tmp_path)
 
     def run(self, *command, check=True, env=None):
@@ -326,7 +327,8 @@ class Composite:
         c = self.consumer
         event = {
             "repository": {"full_name": "fixture/consumer"},
-            "pull_request": {"number": 1, "head": {"sha": c.api.head}},
+            "pull_request": {"number": 1, "head": {"sha": c.api.head},
+                             "base": {"sha": c.base, "repo": {"full_name": "fixture/consumer"}}},
             "issue": {"number": 1, "pull_request": {"url": "fixture"}},
             "comment": {
                 "body": "/maida accept intentional retry",
@@ -405,7 +407,7 @@ class Composite:
                 == c.run("git", "rev-parse", "HEAD").stdout.strip()
             )
             return c.run("git", "status", "--short", env=env)
-        assert uses == "marocchino/sticky-pull-request-comment@v3.0.4", uses
+        assert uses == f"marocchino/sticky-pull-request-comment@{STICKY_SHA}", uses
         sticky = Path(os.environ["MAIDA_E2E_STICKY_PATH"]).resolve()
         sha = c.run("git", "-C", str(sticky), "rev-parse", "HEAD").stdout.strip()
         assert sha == STICKY_SHA, "Use the pinned sticky-comment revision"
