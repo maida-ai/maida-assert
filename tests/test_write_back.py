@@ -119,46 +119,18 @@ def _environment(output_path: Path) -> dict[str, str]:
     }
 
 
-def test_write_back_action_exposes_stable_interface():
-    assert ACTION_PATH.is_file()
-    action = yaml.safe_load(ACTION_PATH.read_text())
+def test_write_back_action_consumes_only_artifact_and_trusted_context():
+    action = yaml.safe_load((REPO_ROOT / "write-back/action.yml").read_text())
+    assert set(action["inputs"]) == {"context", "artifact-directory", "github-token"}
+    assert all(value["required"] for value in action["inputs"].values())
+    steps = action["runs"]["steps"]
+    assert steps[0]["id"] == "write-back"
+    assert 'python3 -I' in steps[0]["run"]
+    assert "accept_artifact.py" in steps[0]["run"]
+    assert all("uses" not in step for step in steps)
+    assert steps[1]["if"] == "always()"
+    assert set(action["outputs"]) == {"changed", "commit-sha", "head-sha"}
 
-    expected_required = {
-        "baseline",
-        "reason",
-        "pr-number",
-        "head-repository",
-        "head-branch",
-        "expected-head-sha",
-        "github-token",
-    }
-    inputs = action["inputs"]
-    assert expected_required.issubset(inputs)
-    assert all(inputs[name]["required"] is True for name in expected_required)
-    assert inputs["run-id"]["required"] is False
-    assert inputs["run-id"]["default"] == ""
-    assert action["outputs"] == {
-        "changed": {
-            "description": "Whether a new baseline commit was created",
-            "value": "${{ steps.write-back.outputs.changed }}",
-        },
-        "commit-sha": {
-            "description": "Created baseline commit SHA, or empty when unchanged",
-            "value": "${{ steps.write-back.outputs.commit-sha }}",
-        },
-        "head-sha": {
-            "description": "PR head SHA sent to the fresh-gate dispatch",
-            "value": "${{ steps.write-back.outputs.head-sha }}",
-        },
-    }
-
-    assert action["runs"]["using"] == "composite"
-    step = action["runs"]["steps"][0]
-    assert step["id"] == "write-back"
-    assert step["env"]["GITHUB_TOKEN"] == "${{ inputs.github-token }}"
-    assert step["env"]["MAIDA_ACCEPT_REASON"] == "${{ inputs.reason }}"
-    assert "${{ inputs.reason }}" not in step["run"]
-    assert "scripts/write_back.py" in step["run"]
 
 
 def test_write_back_commits_only_baseline_pushes_and_dispatches(

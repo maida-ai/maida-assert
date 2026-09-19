@@ -7,6 +7,8 @@ All Git mutations are confined to disposable local repositories.
 
 from __future__ import annotations
 
+import base64
+import copy
 import json
 import os
 import re
@@ -65,12 +67,16 @@ class GitHubFixture:
             return 200, {"permission": self.permission}
         if method == "GET" and path == "/repos/fixture/consumer/pulls/1":
             return 200, {
+                "state": "open",
+                "base": {"sha": self.consumer.base, "ref": "main"},
                 "head": {
                     "sha": self.head,
                     "ref": "candidate",
                     "repo": {"full_name": "fixture/consumer"},
-                }
+                },
             }
+        if "/git/" in path:
+            return self.git_request(method, path, body)
         if method == "POST" and path == "/repos/fixture/consumer/check-runs":
             if self.reject_checks:
                 return 403, {"message": "Resource not accessible by integration"}
@@ -128,6 +134,89 @@ class GitHubFixture:
                 }
         raise AssertionError(f"Unexpected GitHub request: {method} {path}")
 
+    def git_request(self, method, path, body):
+        c = self.consumer
+
+        def git(*args, data=None, env=None):
+            result = subprocess.run(
+                ["git", "--git-dir", str(c.remote), *args],
+                input=data,
+                env=env or c.env,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, result.stderr
+            return result.stdout.strip()
+
+        if method == "GET" and "/git/commits/" in path:
+            return 200, {
+                "tree": {"sha": git("rev-parse", path.rsplit("/", 1)[-1] + "^{tree}")}
+            }
+        if method == "GET" and "/git/trees/" in path:
+            entries = []
+            for line in git("ls-tree", "-r", path.rsplit("/", 1)[-1]).splitlines():
+                metadata, name = line.split("\t")
+                mode, kind, sha = metadata.split()
+                entries.append({"path": name, "mode": mode, "type": kind, "sha": sha})
+            return 200, {"truncated": False, "tree": entries}
+        if method == "GET" and "/git/blobs/" in path:
+            data = subprocess.check_output(
+                [
+                    "git",
+                    "--git-dir",
+                    str(c.remote),
+                    "cat-file",
+                    "blob",
+                    path.rsplit("/", 1)[-1],
+                ]
+            )
+            return 200, {
+                "encoding": "base64",
+                "content": base64.b64encode(data).decode(),
+            }
+        if method == "POST" and path.endswith("/git/trees"):
+            env = {**c.env, "GIT_INDEX_FILE": str(c.root.parent / "api-index")}
+            git("read-tree", body["base_tree"], env=env)
+            for entry in body["tree"]:
+                sha = git("hash-object", "-w", "--stdin", data=entry["content"])
+                git(
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    entry["mode"],
+                    sha,
+                    entry["path"],
+                    env=env,
+                )
+            return 201, {"sha": git("write-tree", env=env)}
+        if method == "POST" and path.endswith("/git/commits"):
+            env = {
+                **c.env,
+                "GIT_AUTHOR_NAME": body["author"]["name"],
+                "GIT_AUTHOR_EMAIL": body["author"]["email"],
+                "GIT_COMMITTER_NAME": "Fixture",
+                "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+            }
+            return 201, {
+                "sha": git(
+                    "commit-tree",
+                    body["tree"],
+                    "-p",
+                    body["parents"][0],
+                    "-m",
+                    body["message"],
+                    env=env,
+                )
+            }
+        if method == "PATCH" and "/git/refs/heads/" in path:
+            assert body["force"] is False
+            ref = "refs/heads/" + path.split("/git/refs/heads/", 1)[1]
+            assert git("merge-base", self.head, body["sha"]) == self.head
+            git("update-ref", ref, body["sha"], self.head)
+            self.head = body["sha"]
+            return 200, {"object": {"sha": self.head}}
+        raise AssertionError((method, path, body))
+
     def __enter__(self):
         fixture = self
 
@@ -136,6 +225,9 @@ class GitHubFixture:
                 self.handle_request()
 
             def do_POST(self):
+                self.handle_request()
+
+            def do_PATCH(self):
                 self.handle_request()
 
             def handle_request(self):
@@ -200,9 +292,11 @@ class Consumer:
             "GITHUB_GRAPHQL_URL": api.url + "/graphql",
             "GITHUB_SERVER_URL": "https://github.example",
             "GITHUB_RUN_ID": "100",
+            "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_TOKEN": "fixture-token",
         }
         self.api = api
+        api.consumer = self
         self.run("git", "init", "--bare", str(self.remote))
         self.run("git", "init", "--initial-branch=main")
         self.run("git", "config", "user.name", "Fixture")
@@ -327,10 +421,14 @@ class Composite:
         c = self.consumer
         event = {
             "repository": {"full_name": "fixture/consumer"},
-            "pull_request": {"number": 1, "head": {"sha": c.api.head},
-                             "base": {"sha": c.base, "repo": {"full_name": "fixture/consumer"}}},
+            "pull_request": {
+                "number": 1,
+                "head": {"sha": c.api.head},
+                "base": {"sha": c.base, "repo": {"full_name": "fixture/consumer"}},
+            },
             "issue": {"number": 1, "pull_request": {"url": "fixture"}},
             "comment": {
+                "id": 7,
                 "body": "/maida accept intentional retry",
                 "user": {"login": "reviewer"},
             },
@@ -398,6 +496,8 @@ class Composite:
     def external(self, step, env):
         uses = step["uses"]
         c = self.consumer
+        if uses.startswith("astral-sh/setup-uv@"):
+            return c.run("uv", "--version", env=env)
         if uses.startswith("actions/setup-python@"):
             return c.run("python", "--version", env=env)
         if uses.startswith("actions/checkout@"):
@@ -420,3 +520,73 @@ class Composite:
         return c.run(
             "node", str(sticky / metadata["runs"]["main"]), env=env, check=False
         )
+
+
+def acceptance(consumer, *, agent_script="agent.py"):
+    """Exercise separate jobs; only artifact bytes cross from candidate to writer."""
+    prepare = Composite(
+        consumer,
+        "accept-command/action.yml",
+        {
+            "stage": "authorize",
+            "baseline": "baseline.json",
+            "policy": "policy.yaml",
+            "github-token": "fixture-token",
+        },
+    ).run()
+    if (
+        prepare.failed
+        or prepare.steps["prepare"]["outputs"].get("authorized") != "true"
+    ):
+        return prepare
+    context = prepare.steps["prepare"]["outputs"]["context"]
+    # Candidate execution has a separate checkout, HOME and runner command files.
+    candidate = copy.copy(consumer)
+    candidate.root = consumer.root.parent / "capture"
+    consumer.run(
+        "git",
+        "clone",
+        "--branch",
+        "candidate",
+        str(consumer.remote),
+        str(candidate.root),
+    )
+    candidate.env = {k: v for k, v in consumer.env.items() if k != "GITHUB_TOKEN"}
+    capture_home = consumer.root.parent / "capture-home"
+    capture_home.mkdir()
+    candidate.env.update(HOME=str(capture_home), GITHUB_WORKSPACE=str(candidate.root))
+    artifact = consumer.root.parent / "captured-artifact"
+    capture = Composite(
+        candidate,
+        "capture-acceptance/action.yml",
+        {
+            "context": context,
+            "agent-script": agent_script,
+            "artifact-directory": str(artifact),
+        },
+    ).run()
+    if capture.failed:
+        return capture
+    writer = copy.copy(consumer)
+    writer.root = consumer.root.parent / "trusted-writer"
+    writer.root.mkdir()
+    writer_home = consumer.root.parent / "writer-home"
+    writer_home.mkdir()
+    writer.env = {
+        **consumer.env,
+        "HOME": str(writer_home),
+        "GITHUB_WORKSPACE": str(writer.root),
+    }
+    downloaded = writer.root / "artifact"
+    shutil.copytree(artifact, downloaded)
+    result = Composite(
+        writer,
+        "write-back/action.yml",
+        {
+            "context": context,
+            "artifact-directory": str(downloaded),
+            "github-token": "fixture-token",
+        },
+    ).run()
+    result.logs = prepare.logs + capture.logs + result.logs
+    return result

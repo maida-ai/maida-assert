@@ -1,194 +1,44 @@
 name: 'Maida Accept Command'
-description: 'Authorize /maida accept and write an intentional baseline change to the PR'
-
+description: 'Authorize acceptance without checking out or executing candidate code'
 inputs:
-  agent-script:
-    description: 'Python script that runs the traced agent'
-    required: false
-    default: ''
-  trace-command:
-    description: 'Trusted shell command that creates exactly one completed Maida run'
-    required: false
-    default: ''
+  stage:
+    description: 'Must be authorize; migrate old single-job handlers to the three-job README workflow'
+    required: true
   baseline:
     description: 'Tracked baseline JSON file to accept'
     required: true
   policy:
-    description: 'Policy file used for the pre-write-back assertion'
-    required: false
+    description: 'Policy path, required unchanged from the PR base'
     default: '.maida/policy.yaml'
-  maida-version:
-    description: 'Maida version, using vVERSION for PyPI or @REF for GitHub'
-    required: false
-    default: 'v0.5.3'
-  python-version:
-    description: 'Python version passed to actions/setup-python'
-    required: false
-    default: '3.12'
-  extra-args:
-    description: 'Additional arguments forwarded to the pre-write-back assertion'
-    required: false
-    default: ''
   github-token:
-    description: 'Actions token with contents and pull-requests write permission'
+    description: 'Token with contents read and pull-requests write permission for authorization replies'
     required: true
-
 outputs:
-  changed:
-    description: 'Whether a baseline commit was created'
-    value: '${{ steps.write-back.outputs.changed }}'
-  commit-sha:
-    description: 'Created baseline commit SHA, or empty when unchanged'
-    value: '${{ steps.write-back.outputs.commit-sha }}'
+  authorized:
+    description: 'Whether the commenter and PR were authorized'
+    value: '${{ steps.prepare.outputs.authorized }}'
+  context:
+    description: 'Trusted authorization binding; pass directly to the write job through needs'
+    value: '${{ steps.prepare.outputs.context }}'
   head-sha:
-    description: 'PR head SHA sent to the fresh-gate dispatch'
-    value: '${{ steps.write-back.outputs.head-sha }}'
-
+    description: 'Authorized candidate commit'
+    value: '${{ steps.prepare.outputs.head-sha }}'
 runs:
-  using: 'composite'
+  using: composite
   steps:
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '${{ inputs.python-version }}'
-
     - name: Parse and authorize command
       id: prepare
       shell: bash
       env:
         GITHUB_TOKEN: '${{ inputs.github-token }}'
+        MAIDA_STAGE: '${{ inputs.stage }}'
         MAIDA_BASELINE: '${{ inputs.baseline }}'
+        MAIDA_POLICY: '${{ inputs.policy }}'
         MAIDA_ACCEPT_ACTION_PATH: '${{ github.action_path }}'
       run: |
-        python "$MAIDA_ACCEPT_ACTION_PATH/../scripts/accept_command.py" \
-          prepare --baseline "$MAIDA_BASELINE"
-
-    - name: Check out verified PR head
-      if: steps.prepare.outputs.authorized == 'true'
-      uses: actions/checkout@v7
-      with:
-        repository: '${{ steps.prepare.outputs.head-repository }}'
-        ref: '${{ steps.prepare.outputs.head-sha }}'
-        token: '${{ inputs.github-token }}'
-
-    - name: Install Maida
-      if: steps.prepare.outputs.authorized == 'true'
-      shell: bash
-      env:
-        MAIDA_REPO: 'https://github.com/maida-ai/maida.git'
-        MAIDA_VERSION: '${{ inputs.maida-version }}'
-      run: |
-        if [[ "$MAIDA_VERSION" == "@"* ]]; then
-          python -m pip install "git+${MAIDA_REPO}${MAIDA_VERSION}"
-        elif [[ "$MAIDA_VERSION" == "v"* ]]; then
-          python -m pip install "maida-ai==${MAIDA_VERSION:1}"
-        else
-          echo "Invalid maida-version: ${MAIDA_VERSION}."
-          exit 10
-        fi
-
-    - name: Produce completed run
-      if: steps.prepare.outputs.authorized == 'true'
-      shell: bash
-      env:
-        AGENT_SCRIPT: '${{ inputs.agent-script }}'
-        TRACE_COMMAND: '${{ inputs.trace-command }}'
-      run: |
-        if { [ -z "$AGENT_SCRIPT" ] && [ -z "$TRACE_COMMAND" ]; } || \
-           { [ -n "$AGENT_SCRIPT" ] && [ -n "$TRACE_COMMAND" ]; }; then
-          echo "Pass exactly one of agent-script or trace-command."
+        if [ "$MAIDA_STAGE" != authorize ] || [ -z "$MAIDA_POLICY" ]; then
+          echo 'Use stage: authorize in a separate job; migrate to the three-job acceptance workflow in README.md.'
           exit 2
         fi
-        export MAIDA_DATA_DIR="$(mktemp -d "$RUNNER_TEMP/maida-accept-command.XXXXXX")"
-        echo "MAIDA_DATA_DIR=$MAIDA_DATA_DIR" >> "$GITHUB_ENV"
-        if [ -n "$AGENT_SCRIPT" ]; then
-          python "$AGENT_SCRIPT"
-        else
-          bash -o pipefail -c "$TRACE_COMMAND"
-        fi
-        python - <<'PY'
-        import json
-        import subprocess
-        import sys
-
-        result = subprocess.run(
-            ["maida", "list", "--json"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        try:
-            runs = json.loads(result.stdout)["runs"] if result.returncode == 0 else []
-        except (KeyError, TypeError, json.JSONDecodeError):
-            runs = []
-        if len(runs) != 1 or runs[0].get("status") == "running":
-            print(
-                "The selected trace source must create exactly one completed Maida run.",
-                file=sys.stderr,
-            )
-            raise SystemExit(2)
-        PY
-
-    - name: Verify completed run
-      if: steps.prepare.outputs.authorized == 'true'
-      shell: bash
-      env:
-        BASELINE: '${{ inputs.baseline }}'
-        POLICY: '${{ inputs.policy }}'
-        EXTRA_ARGS: '${{ inputs.extra-args }}'
-      run: |
-        args=(--baseline "$BASELINE")
-        if [ -n "$POLICY" ] && [ -f "$POLICY" ]; then
-          args+=(--policy "$POLICY")
-        fi
-        if [ -n "$EXTRA_ARGS" ]; then
-          read -r -a extra <<< "$EXTRA_ARGS"
-          args+=("${extra[@]}")
-        fi
-        set +e
-        maida assert "${args[@]}" --format markdown > maida-accept-report.md
-        status=$?
-        set -e
-        if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
-          echo "maida assert could not produce a completed run report (exit $status)."
-          exit "$status"
-        fi
-
-    - name: Write accepted baseline to PR
-      id: write-back
-      if: steps.prepare.outputs.authorized == 'true'
-      shell: bash
-      env:
-        GITHUB_TOKEN: '${{ inputs.github-token }}'
-        MAIDA_BASELINE: '${{ inputs.baseline }}'
-        MAIDA_ACCEPT_REASON: '${{ steps.prepare.outputs.reason }}'
-        MAIDA_PR_NUMBER: '${{ steps.prepare.outputs.pr-number }}'
-        MAIDA_HEAD_REPOSITORY: '${{ steps.prepare.outputs.head-repository }}'
-        MAIDA_HEAD_BRANCH: '${{ steps.prepare.outputs.head-branch }}'
-        MAIDA_EXPECTED_HEAD_SHA: '${{ steps.prepare.outputs.head-sha }}'
-        MAIDA_ACCEPT_ACTION_PATH: '${{ github.action_path }}'
-      run: |
-        python "$MAIDA_ACCEPT_ACTION_PATH/../scripts/write_back.py" \
-          --baseline "$MAIDA_BASELINE" \
-          --reason "$MAIDA_ACCEPT_REASON" \
-          --pr-number "$MAIDA_PR_NUMBER" \
-          --head-repository "$MAIDA_HEAD_REPOSITORY" \
-          --head-branch "$MAIDA_HEAD_BRANCH" \
-          --expected-head-sha "$MAIDA_EXPECTED_HEAD_SHA"
-
-    - name: Report command result
-      if: always() && steps.prepare.outputs.authorized == 'true'
-      shell: bash
-      env:
-        GITHUB_TOKEN: '${{ inputs.github-token }}'
-        WRITE_BACK_OUTCOME: '${{ steps.write-back.outcome }}'
-        WRITE_BACK_CHANGED: '${{ steps.write-back.outputs.changed }}'
-        WRITE_BACK_COMMIT_SHA: '${{ steps.write-back.outputs.commit-sha }}'
-        WRITE_BACK_HEAD_SHA: '${{ steps.write-back.outputs.head-sha }}'
-        MAIDA_ACCEPT_ACTION_PATH: '${{ github.action_path }}'
-      run: |
-        python "$MAIDA_ACCEPT_ACTION_PATH/../scripts/accept_command.py" finalize \
-          --outcome "$WRITE_BACK_OUTCOME" \
-          --changed "$WRITE_BACK_CHANGED" \
-          --commit-sha "$WRITE_BACK_COMMIT_SHA" \
-          --head-sha "$WRITE_BACK_HEAD_SHA"
+        python3 -I "$MAIDA_ACCEPT_ACTION_PATH/../scripts/accept_command.py" \
+          prepare --baseline "$MAIDA_BASELINE" --policy "$MAIDA_POLICY"
