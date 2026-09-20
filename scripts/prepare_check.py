@@ -405,6 +405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with args.markdown.open("a", encoding="utf-8") as markdown:
             markdown.write(
                 "\n\n### Action merge decision\n\n"
+                f"Evaluated PR head: `{args.head_sha}`.\n\n"
                 f"Mode: **{args.mode}**. GitHub conclusion: **{payload['conclusion']}**.\n\n"
             )
             if args.mode == "report-only":

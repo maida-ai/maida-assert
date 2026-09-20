@@ -10,6 +10,8 @@ on:
       - action.yml
       - accept-command/**
       - capture-acceptance/**
+      - pr-context/**
+      - publish-status/**
       - examples/**
       - requirements-dev.txt
       - scripts/**

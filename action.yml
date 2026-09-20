@@ -50,6 +50,17 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  verdict:
+    description: 'Validated behavioral verdict; empty on setup or report errors'
+    value: ${{ steps.check.outputs.verdict }}
+  conclusion:
+    description: 'Validated merge decision; success requires a blocking PASS'
+    value: ${{ steps.check.outputs.conclusion }}
+  publication:
+    description: 'Named check publication outcome'
+    value: ${{ steps.publish-check.outcome }}
+
 runs:
   using: 'composite'
   steps:
@@ -81,6 +92,7 @@ runs:
         BASELINE: ${{ inputs.baseline }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
         CONFIGURATION_ACCEPTANCE: ${{ inputs.configuration-acceptance }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: python "$GITHUB_ACTION_PATH/scripts/resolve_inputs.py"
 
     - name: Install Maida
@@ -168,6 +180,15 @@ runs:
           echo "Ensure the selected trace source records exactly one completed Maida run per trial."
           exit "$status"
         fi
+
+    - name: Recheck PR identity before publication
+      if: steps.trust.outputs.pr_number != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        EXPECTED_HEAD_SHA: ${{ steps.trust.outputs.head_sha }}
+        EXPECTED_BASE_SHA: ${{ steps.trust.outputs.base_sha }}
+      run: python3 -I "$GITHUB_ACTION_PATH/scripts/pr_context.py"
 
     - name: Prepare GitHub check
       id: check
@@ -299,11 +320,12 @@ runs:
         echo "::warning::Could not publish the 'Maida statistical gate' check. Blocking mode will fail this job. Read-only/fork tokens cannot publish merge authorization; see README permissions and required-check setup."
 
     - name: Post PR comment if possible
-      if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
+      if: ${{ inputs.post-comment == 'true' && steps.trust.outputs.pr_number != '' }}
       continue-on-error: true
       uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v3.0.4
       with:
         path: maida-report.md
+        number: ${{ steps.trust.outputs.pr_number }}
 
     - name: Fail if assertions failed
       shell: bash

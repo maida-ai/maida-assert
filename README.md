@@ -74,10 +74,11 @@ it must create exactly one completed Maida run.
 
 ### Blocking mode and required repository settings
 
-Blocking mode supports `pull_request` events with a clean checkout of the exact
-PR head and the base commit available locally (`fetch-depth: 0`). The Action
-makes no Git fetches. It snapshots policy and baseline blobs from
-`github.event.pull_request.base.sha` outside the candidate workspace, and
+Blocking mode supports `pull_request` and verified `maida_baseline_updated`
+dispatch events with a clean checkout of the exact PR head and the base commit
+available locally (`fetch-depth: 0`). The Action makes no Git fetches. PR identity
+verification uses authenticated GitHub API reads. It snapshots policy and baseline
+blobs from the verified PR base outside the candidate workspace, and
 publishes results only against the evaluated head SHA. A missing base, policy,
 baseline, report, trace evidence, or an invalid report stops evaluation. Setup
 errors do not publish a behavioral verdict or an empty comment.
@@ -147,7 +148,7 @@ credentials and cannot substitute for this approval.
 
 ### Report-only mode
 
-Set `mode: report-only` for experiments, schedules, dispatches, and other
+Set `mode: report-only` for experiments, schedules, and other
 non-PR events. It reads the candidate checkout and publishes the distinct
 **Maida behavioral report (non-blocking)** check as neutral for every valid
 behavioral verdict. FAIL and INCONCLUSIVE remain visible. Missing or malformed
@@ -508,46 +509,79 @@ baseline/policy hashes so it can be reviewed. New configuration still needs the
 explicit configuration-acceptance mechanism above and fresh gate results for the
 resulting head; the bot commit never authorizes a merge.
 
-The writer emits `maida_baseline_updated` to request an observational rerun,
-because pushes made with `GITHUB_TOKEN` do not trigger ordinary PR workflows.
-For a blocking evaluation, separately approve the resulting configuration digest
-and create a fresh `pull_request` event for the new head with a maintainer push or
-a separately authorized installation-token workflow. Existing results and
-acceptance values do not carry forward to that head.
+The writer emits `maida_baseline_updated`, because pushes made with
+`GITHUB_TOKEN` do not trigger ordinary PR workflows. The dispatch requests a
+fresh evaluation; it does not grant configuration acceptance. Review the new
+base/head/configuration digest, set `MAIDA_CONFIGURATION_ACCEPTANCE`, and rerun
+the workflow. A later head or base invalidates that acceptance.
 
-An optional report-only listener on the default branch can render the new run:
+Install this listener on the default branch (or use the coordinated
+`maida init --github` scaffold). These new sub-actions currently use `@main`;
+pin a reviewed coordinated Action commit before production use.
 
 ```yaml
-name: Observe Accepted Maida Baseline
+name: Evaluate Accepted Maida Baseline
 on:
+  pull_request:
   repository_dispatch:
     types: [maida_baseline_updated]
 permissions:
   contents: read
   checks: write
+  pull-requests: write
+  statuses: write
 jobs:
   agent-check:
-    if: github.event.client_payload.pr_number != ''
     runs-on: ubuntu-latest
     steps:
+      - id: pr
+        uses: maida-ai/maida-assert/pr-context@main
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.client_payload.sha }}
+          ref: ${{ steps.pr.outputs.head-sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - id: gate
+        uses: maida-ai/maida-assert@main
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
-          mode: report-only
+          configuration-acceptance: ${{ vars.MAIDA_CONFIGURATION_ACCEPTANCE }}
+      - if: always() && steps.pr.outcome == 'success'
+        uses: maida-ai/maida-assert/publish-status@main
+        with:
+          head-sha: ${{ steps.pr.outputs.head-sha }}
+          base-sha: ${{ steps.pr.outputs.base-sha }}
+          verdict: ${{ steps.gate.outputs.verdict }}
+          conclusion: ${{ steps.gate.outputs.conclusion }}
+          publication: ${{ steps.gate.outputs.publication }}
 ```
 
-The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`. If the
-baseline commit succeeds but dispatch fails, the error identifies the written
-head. Request acceptance again against the latest head; an unchanged artifact
-creates no duplicate commit and still requests fresh results. GitHub associates
-the dispatch workflow itself with the default-branch SHA. Blocking
-mode rejects dispatch events; do not treat a dispatch report as PR authorization.
+The dispatch payload contains `pr_number`, `ref`, `sha`, and `baseline`.
+`pr-context` verifies the event type, `github.event.client_payload.pr_number`,
+and `github.event.client_payload.sha` against the current open, same-repository
+PR using the GitHub API before checkout. Policy/baseline paths come from the
+trusted workflow, never from payload claims. The Action verifies identity again
+before publishing its check and updates the existing sticky comment for that PR.
+The report includes the full evaluated head SHA.
+
+GitHub associates the dispatch workflow itself with the default-branch SHA.
+For this combined PR/dispatch workflow, require **Maida / agent-check** (the
+explicit commit status) and **Maida statistical gate**, in place of the ordinary
+PR job requirement. Retain the up-to-date and workflow/review protections above.
+The status is published for both event paths against the verified PR head and
+requires a validated PASS, an accepted configuration and successful named-check
+publication. INCONCLUSIVE receives a failure status and an explicit INCONCLUSIVE
+description; incomplete evaluation or check publication receives an error status.
+Status publication failure fails the workflow and can be retried. The status
+publisher rechecks the head/base before sending any result. API operations are
+not atomic with branch updates; old-head results never authorize a later head.
+
+If the baseline commit succeeds but dispatch fails, the command reply identifies
+the written head and the failure to request fresh results. Request acceptance
+again against the latest head; an unchanged artifact creates no duplicate commit
+and still requests fresh results. Acceptance alone never means the gate passed.
 
 When `maida run` reports failed checks, the action still publishes the
 Markdown report and then exits `1`. Missing runs or baselines and internal
@@ -572,7 +606,13 @@ neutral results, base-policy selection, configuration acceptance and invalidatio
 trace-command ingestion, setup errors, and read-only check publication.
 Authorized acceptance runs the real CLI in a separate checkout and consumes only
 artifact bytes in a fresh writer directory. The local Git API fixture creates a
-baseline-only commit in a bare repository, requests a rerun, and reruns the gate.
+baseline-only commit in a bare repository. The E2E runner executes the generated
+workflow event routing, separate acceptance jobs and dispatch steps directly from
+the coordinated `maida/maida/scaffold.py` generator. CI checks out core `main`;
+local runs use the sibling `maida` checkout or `MAIDA_E2E_SCAFFOLD_PATH`.
+The tests exercise check/status/comment head identity,
+stale pushes, configuration acceptance, INCONCLUSIVE, and dispatch/publication
+failure recovery. They run the released CLI for behavioral evaluation.
 Planted candidate code probes credential exposure and writer-module injection;
 extra staged files, stale bindings, and policy changes are rejected. These local
 tests simulate the job boundary; they do not prove GitHub runner isolation or
@@ -582,14 +622,16 @@ trusted snapshot;
 the agent fixture supplies fixed recorded timing. All agent behavior is simulated.
 
 Install test dependencies and run the suites with `uv` (Python 3.12, Node 24,
-Bash, and Git are required). Fetch the pinned third-party Action once:
+Bash, and Git are required). Use the coordinated core checkout at `../maida`
+(or set `MAIDA_E2E_SCAFFOLD_PATH` to its `maida/scaffold.py`). Fetch the pinned
+third-party Action once:
 
 ```bash
 git clone --branch v3.0.4 --depth 1 https://github.com/marocchino/sticky-pull-request-comment.git /tmp/maida-sticky-comment
 git -C /tmp/maida-sticky-comment rev-parse HEAD
 # Expected: 0ea0beb66eb9baf113663a64ec522f60e49231c0
 uv run --python 3.12 --with-requirements requirements-dev.txt pytest -q --ignore=tests/e2e
-MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment uv run --python 3.12 --with-requirements requirements-e2e.txt pytest -q tests/e2e
+MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida/maida/scaffold.py uv run --python 3.12 --with-requirements requirements-e2e.txt pytest -q tests/e2e
 ```
 
 Tests make no external API or model calls after dependency setup. The harness

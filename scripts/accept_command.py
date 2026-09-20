@@ -268,6 +268,14 @@ def finalize_command(
             f"✅ The baseline already matches the accepted run, @{login}. "
             f"A fresh Maida gate was requested for `{head_sha[:8]}`."
         )
+    elif head_sha:
+        body = (
+            f"⚠️ Baseline head is [`{head_sha[:8]}`]"
+            f"({server_url}/{repository}/commit/{head_sha}), @{login}, "
+            "but requesting fresh gate results failed. No merge authorization was issued. "
+            "Retry `/maida accept` against the latest head; an unchanged baseline "
+            "does not create a duplicate commit."
+        )
     else:
         body = (
             f"❌ Maida could not accept this baseline change, @{login}. "

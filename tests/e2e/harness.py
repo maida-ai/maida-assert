@@ -10,8 +10,10 @@ import copy
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,6 +57,9 @@ class GitHubFixture:
         self.permission = "write"
         self.head = ""
         self.reject_checks = False
+        self.reject_dispatches = False
+        self.reject_statuses = False
+        self.statuses = []
 
     def request(self, method, path, body):
         self.requests.append((method, path, body))
@@ -65,8 +70,8 @@ class GitHubFixture:
             return 200, {"permission": self.permission}
         if method == "GET" and path == "/repos/fixture/consumer/pulls/1":
             return 200, {
-                "state": "open",
-                "base": {"sha": self.consumer.base, "ref": "main"},
+                "number": 1, "state": "open",
+                "base": {"sha": self.consumer.base, "ref": "main", "repo": {"full_name": "fixture/consumer"}},
                 "head": {
                     "sha": self.head,
                     "ref": "candidate",
@@ -80,7 +85,14 @@ class GitHubFixture:
                 return 403, {"message": "Resource not accessible by integration"}
             self.checks.append(body)
             return 201, {"id": len(self.checks), **body}
+        if method == "POST" and "/statuses/" in path:
+            if self.reject_statuses:
+                return 503, {"message": "Status publication unavailable"}
+            self.statuses.append({"sha": path.rsplit("/", 1)[-1], **body})
+            return 201, body
         if method == "POST" and path == "/repos/fixture/consumer/dispatches":
+            if self.reject_dispatches:
+                return 503, {"message": "Dispatch unavailable"}
             self.dispatches.append(body)
             return 204, None
         if method == "POST" and path == "/repos/fixture/consumer/issues/1/comments":
@@ -139,6 +151,7 @@ class GitHubFixture:
             result = subprocess.run(
                 ["git", "--git-dir", str(c.remote), *args],
                 input=data,
+                check=False,
                 env=env or c.env,
                 capture_output=True,
                 text=True,
@@ -361,23 +374,28 @@ with urllib.request.urlopen(request, timeout=5) as response:
 
 
 class Composite:
-    def __init__(self, consumer, action, inputs=None):
+    def __init__(self, consumer, action, inputs=None, *, event=None, event_name=None):
         self.consumer = consumer
         self.path = ROOT / action
         self.action = yaml.safe_load(self.path.read_text())
         self.inputs = {
-            k: str(v.get("default", "")) for k, v in self.action["inputs"].items()
+            k: str(v.get("default", "")) for k, v in self.action.get("inputs", {}).items()
         }
         self.inputs.update(inputs or {})
         self.steps = {}
         self.executed = []
         self.logs = []
         self.failed = False
+        self.event = event
+        self.command_dir = Path(tempfile.mkdtemp(dir=consumer.root.parent))
         self.context = {
             "github.token": "fixture-token",
             "github.action_path": str(self.path.parent),
-            "github.event.pull_request.head.sha": consumer.api.head,
-            "github.sha": consumer.api.head,
+            "github.event.pull_request.head.sha": (
+                event.get("pull_request", {}).get("head", {}).get("sha", "")
+                if event is not None else consumer.api.head
+            ),
+            "github.sha": consumer.env["GITHUB_SHA"],
             "github.server_url": "https://github.example",
             "github.repository": "fixture/consumer",
             "github.run_id": "100",
@@ -385,9 +403,15 @@ class Composite:
             if action.startswith("accept-command")
             else "pull_request",
         }
+        if event_name:
+            self.context["github.event_name"] = event_name
 
     def value(self, expression):
         expression = expression.strip()
+        if expression in {"true", "false"}:
+            return expression
+        if " != " in expression or " == " in expression:
+            return str(self.condition(expression)).lower()
         if " || " in expression:
             return next(
                 (self.value(x) for x in expression.split(" || ") if self.value(x)), ""
@@ -409,9 +433,21 @@ class Composite:
         for clause in clauses:
             if clause == "always()":
                 continue
-            match = re.fullmatch(r"(.+?) == '([^']*)'", clause)
-            assert match, f"Unsupported condition: {clause}"
-            if self.value(match[1]) != match[2]:
+            if " || " in clause:
+                if not any(self.condition(part) for part in clause.split(" || ")):
+                    return False
+                continue
+            match = re.fullmatch(r"startsWith\((.+?), '([^']*)'\)", clause)
+            if match:
+                if not self.value(match[1]).startswith(match[2]):
+                    return False
+                continue
+            match = re.fullmatch(r"(.+?) (==|!=) '([^']*)'", clause)
+            if match:
+                equal = self.value(match[1]) == match[3]
+                if equal != (match[2] == "=="):
+                    return False
+            elif not self.value(clause):
                 return False
         return True
 
@@ -431,7 +467,8 @@ class Composite:
                 "user": {"login": "reviewer"},
             },
         }
-        event_path = c.root.parent / "event.json"
+        event = self.event or event
+        event_path = self.command_dir / "event.json"
         event_path.write_text(json.dumps(event))
         env = {
             **c.env,
@@ -446,9 +483,9 @@ class Composite:
             if condition and not self.condition(condition):
                 continue
             identifier = step.get("id", f"step-{index}")
-            self.executed.append(step["name"])
-            output_path = c.root.parent / f"{self.path.parent.name}-{index}-output"
-            env_path = c.root.parent / f"{self.path.parent.name}-{index}-env"
+            self.executed.append(step.get("name", identifier))
+            output_path = self.command_dir / f"{index}-output"
+            env_path = self.command_dir / f"{index}-env"
             output_path.write_text("")
             env_path.write_text("")
             step_env = {
@@ -458,7 +495,7 @@ class Composite:
                 **{k: self.render(v) for k, v in step.get("env", {}).items()},
             }
             if "run" in step:
-                if step["name"] == "Install Maida":
+                if step.get("name") == "Install Maida":
                     # Installed once from requirements-e2e.txt before testing.
                     version = c.run(
                         "python",
@@ -489,15 +526,42 @@ class Composite:
             env.update(read_commands(env_path))
             if result.returncode and not step.get("continue-on-error"):
                 self.failed = True
+        self.outputs = {name: self.render(value["value"]) for name, value in self.action.get("outputs", {}).items()}
         return self
 
     def external(self, step, env):
         uses = step["uses"]
         c = self.consumer
+        if uses.startswith("maida-ai/maida-assert"):
+            subpath = uses.split("@", 1)[0].removeprefix("maida-ai/maida-assert").strip("/")
+            child = Composite(c, str(Path(subpath) / "action.yml"),
+                {k: self.render(v) for k, v in step.get("with", {}).items()},
+                event=self.event, event_name=self.context["github.event_name"]).run()
+            with open(env["GITHUB_OUTPUT"], "a") as output:
+                for key, value in child.outputs.items():
+                    if "\n" in value:
+                        output.write(f"{key}<<END\n{value}\nEND\n")
+                    else:
+                        output.write(f"{key}={value}\n")
+            self.children[step.get("id", subpath)] = child
+            return subprocess.CompletedProcess([], int(child.failed), "\n".join(child.logs), "")
+        if uses.startswith("actions/upload-artifact@"):
+            self.artifacts[self.render(step["with"]["name"])] = Path(self.render(step["with"]["path"])).read_bytes()
+            return subprocess.CompletedProcess([], 0, "", "")
+        if uses.startswith("actions/download-artifact@"):
+            target = Path(self.render(step["with"]["path"]))
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "acceptance.json").write_bytes(self.artifacts[self.render(step["with"]["name"])])
+            return subprocess.CompletedProcess([], 0, "", "")
         if uses.startswith("astral-sh/setup-uv@"):
             return c.run("uv", "--version", env=env)
         if uses.startswith("actions/setup-python@"):
             return c.run("python", "--version", env=env)
+        if uses.startswith("actions/checkout@") and hasattr(self, "children"):
+            assert step["with"]["persist-credentials"] is False
+            c.run("git", "clone", str(c.remote), ".")
+            c.run("git", "checkout", self.render(step["with"]["ref"]))
+            return subprocess.CompletedProcess([], 0, "", "")
         if uses.startswith("actions/checkout@"):
             assert self.render(step["with"]["repository"]) == "fixture/consumer"
             assert (
@@ -588,3 +652,61 @@ def acceptance(consumer, *, agent_script="agent.py"):
     ).run()
     result.logs = prepare.logs + capture.logs + result.logs
     return result
+
+
+class Workflow:
+    """Run the generated event/jobs/steps with separate disposable runner directories."""
+    def __init__(self, consumer, event_name, event, *, acceptance_value=""):
+        self.consumer = consumer
+        source = Path(os.environ.get("MAIDA_E2E_SCAFFOLD_PATH", ROOT.parent / "maida/maida/scaffold.py"))
+        scaffold = runpy.run_path(str(source))
+        generated = consumer.root.parent / "generated-maida.yml"
+        scaffold["write_scaffold"](generated, scaffold["WORKFLOW_TEMPLATE"], force=True)
+        self.workflow = yaml.safe_load(generated.read_text())
+        self.event_name, self.event = event_name, event
+        self.acceptance_value = acceptance_value
+        self.jobs, self.artifacts = {}, {}
+
+    def run(self):
+        triggers = self.workflow.get("on", self.workflow.get(True))
+        assert self.event_name in triggers
+        if self.event_name == "repository_dispatch":
+            assert self.event["action"] in triggers[self.event_name]["types"]
+        root = Path(tempfile.mkdtemp(dir=self.consumer.root.parent, prefix="workflow-"))
+        for name, definition in self.workflow["jobs"].items():
+            c = copy.copy(self.consumer)
+            c.root = root / name / "workspace"
+            c.root.mkdir(parents=True)
+            home = c.root.parent / "home"
+            home.mkdir()
+            c.env = {**c.env, "HOME": str(home), "GITHUB_WORKSPACE": str(c.root),
+                     "RUNNER_TEMP": str(c.root.parent), "MAIDA_DATA_DIR": str(c.root.parent / "runs"),
+                     "GITHUB_SHA": self.consumer.base if self.event_name == "repository_dispatch" else self.consumer.api.head}
+            if name == "capture":
+                c.env.pop("GITHUB_TOKEN", None)
+            job = Composite(c, "action.yml", event=self.event, event_name=self.event_name)
+            job.action = {"runs": {"steps": definition["steps"]}}
+            job.children, job.artifacts = {}, self.artifacts
+            job.context.update({
+                "env.MAIDA_AGENT_SCRIPT": "agent.py", "env.MAIDA_POLICY": "policy.yaml",
+                "env.MAIDA_BASELINE": "baseline.json", "vars.MAIDA_CONFIGURATION_ACCEPTANCE": self.acceptance_value,
+                "runner.temp": str(c.root.parent), "github.run_attempt": "1",
+                "github.event.issue.pull_request": self.event.get("issue", {}).get("pull_request", {}),
+                "github.event.comment.body": self.event.get("comment", {}).get("body", ""),
+                "github.sha": c.env["GITHUB_SHA"],
+            })
+            for previous, result in self.jobs.items():
+                job.context[f"needs.{previous}.result"] = result["result"]
+                for key in ("authorized", "context", "head-sha"):
+                    job.context[f"needs.{previous}.outputs.{key}"] = result["outputs"].get(key, "")
+            needs = definition.get("needs", [])
+            needs = [needs] if isinstance(needs, str) else needs
+            condition = definition.get("if", "")
+            eligible = "always()" in condition or all(self.jobs[n]["result"] == "success" for n in needs)
+            if not eligible or (condition and not job.condition(condition)):
+                self.jobs[name] = {"result": "skipped", "outputs": {}}
+                continue
+            job.run()
+            outputs = {k: job.render(v) for k, v in definition.get("outputs", {}).items()}
+            self.jobs[name] = {"result": "failure" if job.failed else "success", "outputs": outputs, "runner": job}
+        return self

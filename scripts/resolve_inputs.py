@@ -1,6 +1,7 @@
 """Resolve blocking evaluation inputs from the PR's immutable base revision.
 
-No network calls: the caller must check out the exact candidate with history.
+The caller must check out the exact candidate with history. Dispatch events
+are verified against the live GitHub PR before selecting trusted configuration.
 Acceptance is a trusted workflow input, never a file or claim from the PR.
 """
 from __future__ import annotations
@@ -77,6 +78,7 @@ def resolve(*, workspace: Path, destination: Path, mode: str, event: dict,
         if not (policy or baseline):
             raise ConfigurationError("Either baseline, policy, or both must be provided.")
         return {"policy": policy, "baseline": baseline, "head_sha": head,
+                "pr_number": str(event.get("pull_request", {}).get("number", "")),
                 "configuration_blocked": False}
     if event_name != "pull_request":
         raise ConfigurationError("Blocking mode requires a pull_request event; use report-only for other events.")
@@ -123,6 +125,7 @@ def resolve(*, workspace: Path, destination: Path, mode: str, event: dict,
         baseline_hash = selected[baseline]["sha256"]
     return {
         "policy": str(policy_file), "baseline": baseline_file,
+        "pr_number": str(pr.get("number", "")),
         "head_sha": head, "base_sha": base, "baseline_revision": head if accepted else base,
         "configuration_sha256": digest,
         "baseline_sha256": baseline_hash, "configuration_blocked": changed and not accepted,
@@ -133,18 +136,27 @@ def resolve(*, workspace: Path, destination: Path, mode: str, event: dict,
 
 def main() -> int:
     try:
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        event_name = os.environ["GITHUB_EVENT_NAME"]
+        if event_name == "repository_dispatch" and (
+            os.environ["MODE"] == "blocking" or event.get("action") == "maida_baseline_updated"
+        ):
+            from pr_context import live_context
+            pull, _ = live_context()
+            event = {"pull_request": pull}
+            event_name = "pull_request"
         destination = Path(tempfile.mkdtemp(prefix="maida-trusted-", dir=os.environ["RUNNER_TEMP"]))
         context = resolve(
             workspace=Path(os.environ["GITHUB_WORKSPACE"]), destination=destination,
-            mode=os.environ["MODE"], event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()),
-            event_name=os.environ["GITHUB_EVENT_NAME"], repository=os.environ["GITHUB_REPOSITORY"],
+            mode=os.environ["MODE"], event=event,
+            event_name=event_name, repository=os.environ["GITHUB_REPOSITORY"],
             policy=os.environ["POLICY"], baseline=os.environ["BASELINE"],
             extra_args=os.environ.get("EXTRA_ARGS", ""), acceptance=os.environ.get("CONFIGURATION_ACCEPTANCE", ""),
         )
         context_path = destination / "context.json"
         context_path.write_text(json.dumps(context, indent=2) + "\n")
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-            for name in ("policy", "baseline", "head_sha", "base_sha", "baseline_revision"):
+            for name in ("policy", "baseline", "head_sha", "base_sha", "baseline_revision", "pr_number"):
                 if name not in context:
                     continue
                 output.write(f"{name}={context[name]}\n")
@@ -154,7 +166,7 @@ def main() -> int:
             print(f"Maintainer acceptance value: {context['acceptance']}")
             print(f"Configuration status: {context['configuration_status']}")
         return 0
-    except (ConfigurationError, OSError, KeyError, json.JSONDecodeError) as error:
+    except (ValueError, RuntimeError, OSError, KeyError) as error:
         print(f"Maida configuration error: {error}", file=sys.stderr)
         return 2
 
