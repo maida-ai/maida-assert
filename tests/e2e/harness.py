@@ -5,8 +5,6 @@ Unknown expressions, step types, API routes, and checkout targets fail loudly.
 All Git mutations are confined to disposable local repositories.
 """
 
-from __future__ import annotations
-
 import base64
 import copy
 import json
