@@ -6,7 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from harness import Composite, Consumer, GitHubFixture, acceptance
+from harness import Composite, Consumer, GitHubFixture, Workflow, acceptance
 
 
 @pytest.fixture
@@ -20,6 +20,7 @@ def consumer(tmp_path):
                     {
                         "requests": api.requests,
                         "checks": api.checks,
+                        "statuses": api.statuses,
                         "comments": api.comments,
                         "dispatches": api.dispatches,
                     },
@@ -54,6 +55,7 @@ def snapshot(name, text, directory, result):
     expected_text = expected.read_text().replace(
         "<base-sha>", result.steps["trust"]["outputs"]["base_sha"]
     )
+    expected_text = expected_text.replace("<head-sha>", result.steps["trust"]["outputs"]["head_sha"])
     # Bind expected CLI links to the actual trusted snapshot; do not hide content drift.
     baseline = result.steps["trust"]["outputs"]["baseline"]
     cli, suffix = expected_text.split("\n---\n\n### Accept this intentional change", 1)
@@ -111,6 +113,41 @@ def test_inconclusive_blocks_and_never_printed_as_pass(consumer):
     assert consumer.api.checks[-1]["conclusion"] == "failure"
     assert len(consumer.api.comments) == 1, result.logs
     snapshot("inconclusive", consumer.api.comments[0]["body"], consumer.root, result)
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.api.dispatches.append({"event_type": "maida_baseline_updated", "client_payload": {
+        "pr_number": 1, "sha": consumer.api.head, "ref": "candidate"}})
+    dispatched = workflow_gate(consumer, dispatch_event(consumer))
+    assert dispatched.failed, dispatched.logs
+    assert consumer.api.checks[-1]["head_sha"] == consumer.api.head
+    status = consumer.api.statuses[-1]
+    assert status["sha"] == consumer.api.head and status["state"] == "failure"
+    assert "INCONCLUSIVE" in status["description"] and "passed" not in status["description"]
+    assert len(consumer.api.comments) == 1
+    assert consumer.api.head in consumer.api.comments[0]["body"]
+
+
+def pr_event(consumer):
+    return {"repository": {"full_name": "fixture/consumer"}, "pull_request": {
+        "number": 1, "head": {"sha": consumer.api.head},
+        "base": {"sha": consumer.base, "repo": {"full_name": "fixture/consumer"}},
+    }}
+
+
+def comment_event():
+    return {"repository": {"full_name": "fixture/consumer"},
+            "issue": {"number": 1, "pull_request": {"url": "fixture"}},
+            "comment": {"id": 7, "body": "/maida accept intentional retry", "user": {"login": "reviewer"}}}
+
+
+def dispatch_event(consumer):
+    dispatch = consumer.api.dispatches[-1]
+    return {"action": dispatch["event_type"], "client_payload": dispatch["client_payload"]}
+
+
+def workflow_gate(consumer, event, acceptance_value=""):
+    workflow = Workflow(consumer, "repository_dispatch" if "client_payload" in event else "pull_request",
+                        event, acceptance_value=acceptance_value).run()
+    return workflow.jobs["agent-check"]["runner"]
 
 
 @pytest.mark.parametrize("authorized", [True, False])
@@ -118,69 +155,90 @@ def test_accept_command_and_rerun(consumer, authorized):
     consumer.regress()
     original_head = consumer.api.head
     original_baseline = (consumer.root / "baseline.json").read_bytes()
-    failed = gate(consumer)
-    assert failed.failed
-    assert len(consumer.api.comments) == 1, failed.logs
+    initial = workflow_gate(consumer, pr_event(consumer))
+    assert initial.failed, initial.logs
+    assert consumer.api.statuses[-1]["state"] == "failure"
     comment_id = consumer.api.comments[0]["id"]
     consumer.api.permission = "write" if authorized else "read"
-    result = acceptance(consumer)
-    assert not result.failed, result.logs
+    workflow = Workflow(consumer, "issue_comment", comment_event()).run()
     if not authorized:
-        assert result.steps["prepare"]["outputs"]["authorized"] == "false"
-        assert "Produce completed run" not in result.executed
-        assert "Check out verified PR head" not in result.executed
+        assert workflow.jobs["capture"]["result"] == "skipped"
+        assert workflow.jobs["write"]["result"] == "skipped"
         assert not consumer.api.dispatches
-        assert consumer.run("git", "rev-parse", "HEAD").stdout.strip() == original_head
+        assert consumer.api.head == original_head
         assert (consumer.root / "baseline.json").read_bytes() == original_baseline
-        assert "requires write access" in consumer.api.comments[-1]["body"]
+        assert not any(method != "GET" and "/git/" in path for method, path, _ in consumer.api.requests)
         return
-    assert result.steps["write-back"]["outputs"]["changed"] == "true"
+    writer = workflow.jobs["write"]["runner"]
+    assert not writer.failed, writer.logs
     consumer.run("git", "fetch", "origin", "candidate")
     consumer.run("git", "merge", "--ff-only", "origin/candidate")
     consumer.update_head()
     assert consumer.api.head != original_head
-    assert (
-        consumer.run(
-            "git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"
-        ).stdout.strip()
-        == "baseline.json"
-    )
-    assert (
-        consumer.run(
-            "git",
-            "--git-dir",
-            str(consumer.remote),
-            "rev-parse",
-            "refs/heads/candidate",
-        ).stdout.strip()
-        == consumer.api.head
-    )
+    assert consumer.run("git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").stdout.strip() == "baseline.json"
     baseline = json.loads((consumer.root / "baseline.json").read_text())
-    provenance = baseline["acceptance"]
-    assert provenance["reason"] == "intentional retry"
-    assert (
-        provenance["previous_baseline"]["sha256"]
-        == sha256(original_baseline).hexdigest()
-    )
-    assert provenance["source"]["commit_sha"] == original_head
-    assert consumer.api.dispatches[-1]["client_payload"]["sha"] == consumer.api.head
-    unapproved = gate(consumer)
+    assert baseline["acceptance"]["previous_baseline"]["sha256"] == sha256(original_baseline).hexdigest()
+    assert baseline["acceptance"]["source"]["commit_sha"] == original_head
+    event = dispatch_event(consumer)
+    assert event["client_payload"]["sha"] == consumer.api.head
+    unapproved = workflow_gate(consumer, event)
     assert unapproved.failed, unapproved.logs
-    context = json.loads(
-        Path(unapproved.steps["trust"]["outputs"]["context"]).read_text()
-    )
-    rerun = gate(consumer, **{"configuration-acceptance": context["acceptance"]})
+    context = json.loads(Path(unapproved.children["gate"].steps["trust"]["outputs"]["context"]).read_text())
+    rerun = workflow_gate(consumer, event, context["acceptance"])
     assert not rerun.failed, rerun.logs
     assert consumer.api.checks[-1]["conclusion"] == "success"
-    reports = [
-        c
-        for c in consumer.api.comments
-        if "<!-- Sticky Pull Request Comment -->" in c["body"]
-    ]
-    assert len(reports) == 1
-    assert reports[0]["id"] == comment_id
+    assert consumer.api.checks[-1]["head_sha"] == consumer.api.head
+    assert consumer.api.statuses[-1]["state"] == "success"
+    assert consumer.api.statuses[-1]["sha"] == consumer.api.head
+    reports = [c for c in consumer.api.comments if "<!-- Sticky Pull Request Comment -->" in c["body"]]
+    assert len(reports) == 1 and reports[0]["id"] == comment_id
     assert "Maida verdict: pass" in reports[0]["body"]
-    assert "Maida verdict: fail" not in reports[0]["body"]
+    assert consumer.api.head in reports[0]["body"]
+    published = (len(consumer.api.checks), len(consumer.api.statuses), reports[0]["body"])
+    (consumer.root / "later.txt").write_text("new push")
+    consumer.run("git", "add", "later.txt")
+    consumer.run("git", "commit", "-m", "Later push invalidates prior approval")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    stale = workflow_gate(consumer, event, context["acceptance"])
+    assert stale.failed
+    assert (len(consumer.api.checks), len(consumer.api.statuses), reports[0]["body"]) == published
+    fresh = workflow_gate(consumer, pr_event(consumer), context["acceptance"])
+    assert fresh.failed
+    assert consumer.api.statuses[-1]["sha"] == consumer.api.head
+    assert consumer.api.statuses[-1]["state"] == "error"
+
+
+@pytest.mark.parametrize("failure", ["checks", "statuses"])
+def test_generated_dispatch_publication_failure_is_recoverable(consumer, failure):
+    consumer.api.dispatches.append({"event_type": "maida_baseline_updated", "client_payload": {
+        "pr_number": 1, "sha": consumer.api.head, "ref": "candidate"}})
+    setattr(consumer.api, "reject_" + failure, True)
+    result = workflow_gate(consumer, dispatch_event(consumer))
+    assert result.failed, result.logs
+    assert not any(s["state"] == "success" for s in consumer.api.statuses)
+    if failure == "checks":
+        assert consumer.api.statuses[-1]["state"] == "error"
+    setattr(consumer.api, "reject_" + failure, False)
+    retry = workflow_gate(consumer, dispatch_event(consumer))
+    assert not retry.failed, retry.logs
+    assert consumer.api.statuses[-1]["state"] == "success"
+
+
+def test_generated_acceptance_dispatch_failure_reports_written_head_and_retries(consumer):
+    consumer.regress()
+    consumer.api.reject_dispatches = True
+    failed = Workflow(consumer, "issue_comment", comment_event()).run()
+    assert failed.jobs["write"]["result"] == "failure"
+    written = consumer.api.head
+    assert "requesting fresh gate results failed" in consumer.api.comments[-1]["body"]
+    assert written in consumer.api.comments[-1]["body"]
+    assert "No baseline update was confirmed" not in consumer.api.comments[-1]["body"]
+    consumer.api.reject_dispatches = False
+    retry = Workflow(consumer, "issue_comment", comment_event()).run()
+    assert retry.jobs["write"]["result"] == "success", retry.jobs["write"]["runner"].logs
+    assert consumer.api.head == written
+    assert consumer.api.dispatches[-1]["client_payload"]["sha"] == written
 
 
 def test_trace_command_ingests_one_completed_run(consumer):

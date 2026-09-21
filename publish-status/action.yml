@@ -1,0 +1,31 @@
+name: Maida required status
+description: Publish a verdict-derived status against the verified PR head
+inputs:
+  head-sha:
+    description: Verified PR head from pr-context
+    required: true
+  base-sha:
+    description: Verified PR base from pr-context
+    required: true
+  verdict:
+    description: Validated gate verdict
+    default: ''
+  conclusion:
+    description: Validated merge decision
+    default: ''
+  publication:
+    description: Check publication outcome
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Publish required PR status
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        EXPECTED_HEAD_SHA: ${{ inputs.head-sha }}
+        EXPECTED_BASE_SHA: ${{ inputs.base-sha }}
+        VERDICT: ${{ inputs.verdict }}
+        CONCLUSION: ${{ inputs.conclusion }}
+        PUBLICATION: ${{ inputs.publication }}
+      run: python3 -I "$GITHUB_ACTION_PATH/../scripts/pr_context.py" status

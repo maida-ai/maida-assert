@@ -266,7 +266,7 @@ def test_finalize_posts_confirmation_or_actionable_failure(
         outcome=outcome,
         changed=changed,
         commit_sha="b" * 40,
-        head_sha="c" * 40,
+        head_sha="c" * 40 if outcome == "success" else "",
         api_url="https://api.github.test",
         token="secret",
         server_url="https://github.test",

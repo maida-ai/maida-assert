@@ -438,7 +438,9 @@ def test_readme_documents_write_back_security_and_dispatch_contract():
     assert "github.event.client_payload.sha" in readme
     assert "github.event.client_payload.pr_number" in readme
     assert "default-branch SHA" in readme
-    assert "Blocking\nmode rejects dispatch events" in readme
+    assert "explicit commit status" in readme
+    assert "maida-ai/maida-assert/pr-context@main" in readme
+    assert "maida-ai/maida-assert/publish-status@main" in readme
 
 
 def test_readme_documents_authorized_accept_command_workflow():

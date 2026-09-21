@@ -1,0 +1,21 @@
+name: Maida PR context
+description: Verify the live PR identity before checking out a dispatch candidate
+outputs:
+  head-sha:
+    description: Verified current PR head
+    value: ${{ steps.context.outputs.head-sha }}
+  base-sha:
+    description: Verified current PR base
+    value: ${{ steps.context.outputs.base-sha }}
+  pr-number:
+    description: Verified open PR number
+    value: ${{ steps.context.outputs.pr-number }}
+runs:
+  using: composite
+  steps:
+    - name: Verify PR context
+      id: context
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python3 -I "$GITHUB_ACTION_PATH/../scripts/pr_context.py"

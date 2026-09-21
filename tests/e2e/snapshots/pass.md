@@ -32,6 +32,8 @@ No behavior changed from the accepted baseline across the sampled trials.
 
 ### Action merge decision
 
+Evaluated PR head: `<head-sha>`.
+
 Mode: **blocking**. GitHub conclusion: **success**.
 
 Only a behavioral PASS with accepted configuration and successful check publication can authorize this commit.

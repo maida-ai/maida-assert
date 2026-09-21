@@ -27,6 +27,21 @@ from accept_command import CommandError, _request_json, _write_outputs
 MAX_BYTES = 1024 * 1024
 
 
+class DispatchError(CommandError):
+    """The branch update completed, but requesting fresh results failed."""
+
+    def __init__(self, head_sha, changed):
+        super().__init__(
+            f"Baseline head is {head_sha}, but fresh-gate dispatch failed. "
+            "Request acceptance again to retry."
+        )
+        self.outputs = {
+            "head-sha": head_sha,
+            "changed": str(changed).lower(),
+            "commit-sha": head_sha if changed else "",
+        }
+
+
 def _json(data):
     def reject_constant(value):
         raise ValueError("Non-finite JSON number")
@@ -333,9 +348,7 @@ def write_artifact(
             },
         )
     except CommandError as exc:
-        raise CommandError(
-            f"Baseline head is {head_sha}, but fresh-gate dispatch failed. Request acceptance again to retry."
-        ) from exc
+        raise DispatchError(head_sha, changed) from exc
     return {
         "changed": str(changed).lower(),
         "commit-sha": head_sha if changed else "",
@@ -363,6 +376,8 @@ def main():
         print(result["message"])
         return 0
     except (CommandError, OSError, ValueError, KeyError, TypeError) as exc:
+        if isinstance(exc, DispatchError):
+            _write_outputs(Path(os.environ["GITHUB_OUTPUT"]), exc.outputs)
         print(
             f"error: acceptance failed ({type(exc).__name__}): {exc}", file=sys.stderr
         )

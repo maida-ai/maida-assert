@@ -305,9 +305,12 @@ def test_dispatch_failure_reports_written_head(prepared, monkeypatch):
         return api(method, path, **kwargs)
 
     monkeypatch.setattr(m, "_request_json", request)
-    with pytest.raises(m.CommandError, match="fresh-gate dispatch failed"):
+    with pytest.raises(m.DispatchError, match="fresh-gate dispatch failed") as error:
         write(prepared)
     assert api.mutations[-1][0] == "PATCH"
+    assert error.value.outputs == {
+        "head-sha": "c" * 40, "commit-sha": "c" * 40, "changed": "true"
+    }
 
 
 @pytest.mark.parametrize(
