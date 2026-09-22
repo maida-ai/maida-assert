@@ -31,6 +31,7 @@ inputs:
       Could be a version number starting with 'v' or a branch name starting with '@'.
       If a github identifier starts with 'v', use '@' prefix.
       Otherwise PyPI will be used. Default is "v0.5.3".
+      The default uses hash-locked dependencies; overrides warn and bypass that lock.
     required: false
     default: 'v0.5.3'
   python-version:
@@ -79,7 +80,7 @@ runs:
         fi
 
     - name: Set up Python
-      uses: actions/setup-python@v7.0.0
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -101,11 +102,16 @@ runs:
         MAIDA_VERSION: '${{ inputs.maida-version }}'
       shell: bash
       run: |
-        if [[ "${MAIDA_VERSION}" == "@"* ]]; then
+        LOCKED_VERSION="$(sed -n 's/^maida-ai==/v/p' "$GITHUB_ACTION_PATH/requirements-maida.txt")"
+        if [[ "$MAIDA_VERSION" == "$LOCKED_VERSION" ]]; then
+          python -m pip install --require-hashes --only-binary=:all: -r "$GITHUB_ACTION_PATH/requirements-maida.lock"
+        elif [[ "${MAIDA_VERSION}" == "@"* ]]; then
           # GitHub identifier
+          echo '::warning::Custom maida-version bypasses the reviewed dependency lock; review and pin this dependency separately.'
           python -m pip install "git+${MAIDA_REPO}${MAIDA_VERSION}"
         elif [[ "${MAIDA_VERSION}" == "v"* ]]; then
           # PyPI version number
+          echo '::warning::Custom maida-version bypasses the reviewed dependency lock; review and pin this dependency separately.'
           python -m pip install "maida-ai==${MAIDA_VERSION:1}"
         else
           # Let's not allow any other values
