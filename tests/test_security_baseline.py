@@ -15,20 +15,22 @@ def load_yaml(path):
 
 
 def test_all_workflows_declare_read_only_defaults_and_explicit_job_grants():
-    expected_writes = {
-        ("ci.yml", "integration"): {"checks", "pull-requests"},
-        ("e2e.yml", "live-smoke"): {"checks"},
-        ("codeql.yml", "analyze"): {"security-events"},
+    expected_grants = {
+        ("ci.yml", "integration"): {
+            "contents": "read", "checks": "write", "pull-requests": "write",
+        },
+        ("e2e.yml", "live-smoke"): {"contents": "read", "checks": "write"},
+        ("codeql.yml", "analyze"): {"contents": "read", "security-events": "write"},
+        ("release.yml", "release"): {
+            "contents": "write", "id-token": "write", "attestations": "write",
+        },
     }
     for path in (ROOT / ".github/workflows").glob("*.y*ml"):
         workflow = load_yaml(path)
         assert workflow["permissions"] == {"contents": "read"}, path.name
         for name, job in workflow["jobs"].items():
             grants = job["permissions"]
-            assert isinstance(grants, dict)
-            assert grants.get("contents") == "read"
-            assert set(grants.values()) <= {"read", "write", "none"}
-            assert {key for key, value in grants.items() if value == "write"} == expected_writes.get((path.name, name), set())
+            assert grants == expected_grants.get((path.name, name), {"contents": "read"}), (path.name, name)
 
 
 def test_dependabot_covers_python_and_all_composite_actions():
