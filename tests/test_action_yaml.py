@@ -409,7 +409,7 @@ def test_public_files_use_current_branding():
         ".agent" + "dbg",
         "AGENT" + "DBG",
     )
-    skipped_dirs = {".git", ".pytest_cache", ".ruff_cache", "__pycache__"}
+    skipped_dirs = {".git", ".pytest_cache", ".ruff_cache", "__pycache__", ".venv"}
     skipped_files = {".coverage", "AGENTS.md"}
 
     leaks = []
@@ -421,7 +421,11 @@ def test_public_files_use_current_branding():
             continue
         if any(part in skipped_dirs for part in relative_path.parts):
             continue
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            leaks.append(f"{relative_path} is not UTF-8 encoded: {e}")
+            continue
         for term in forbidden:
             if term in text:
                 leaks.append(f"{relative_path} contains {term}")
