@@ -23,6 +23,12 @@ apply the checkout and protection settings below; older CLI templates do not
 include them. These blocking-mode inputs require an Action revision containing
 this change. Pin the reviewed Action revision by full commit SHA in production.
 
+## Versioning
+
+The [Maida contributor policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility) defines cross-repository compatibility. This Action has its own `PATCH` releases within the `MAJOR.MINOR` compatibility line set by the `maida-ai` engine. The Action is the CI gate product, so each new release must test the engine range and functionality it claims to support. The `maida-version` input selects the actual engine package installed in a run; the Action tag alone does not select or prove a compatible engine version.
+
+For new releases, create an immutable full tag such as `v0.5.2` for an Action tested with the engine's `0.5` line, and advance the `v0.5` alias to the latest compatible Action patch. Do not move a full release tag. At version 1 or later, also maintain a moving major tag such as `v1`. There is no `v0` alias: pre-1.0 minor releases may contain incompatible changes. A full commit SHA remains the immutable reference for production workflows. The `@v5` examples below use the existing tag scheme; update them only after the replacement Action tag exists and has been verified.
+
 ## Usage
 
 Add a workflow to your repository (for example
