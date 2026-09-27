@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /accept-command
+      - /capture-acceptance
+      - /pr-context
+      - /publish-status
+      - /write-back
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Dependabot uses the pip ecosystem for requirements*.txt files.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
