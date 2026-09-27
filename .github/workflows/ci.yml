@@ -6,6 +6,7 @@ on:
     paths: &test_paths
       - .maida/**
       - .github/workflows/**
+      - .github/dependabot.yml
       - README.md
       - action.yml
       - accept-command/**
@@ -19,6 +20,9 @@ on:
       - write-back/**
   pull_request:
     paths: *test_paths
+
+permissions:
+  contents: read
 
 jobs:
   unit-tests:

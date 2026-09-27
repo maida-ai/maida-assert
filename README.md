@@ -23,6 +23,14 @@ apply the checkout and protection settings below; older CLI templates do not
 include them. These blocking-mode inputs require an Action revision containing
 this change. Pin the reviewed Action revision by full commit SHA in production.
 
+## Security
+
+Report vulnerabilities privately using the contact and response policy in [SECURITY.md](SECURITY.md). Repository workflows declare read-only default token permissions and explicit job grants; publishing jobs request only the write scopes they need.
+
+[Dependabot configuration](.github/dependabot.yml) schedules weekly version checks for Python requirements, GitHub Actions workflows, and composite actions. Dependabot alerts and security updates are separate repository settings. Unpinned Python requirements do not provide a reproducible inventory of installed versions; version checks do not replace reviewing dependency alerts.
+
+The [CodeQL workflow](.github/workflows/codeql.yml) scans Python and GitHub Actions on pushes and pull requests targeting `main` or `release/**`, weekly, and on manual dispatch. It uses pinned actions and grants `security-events: write` only to the analysis job. Use this workflow as advanced setup; do not also enable CodeQL default setup. After merging the configuration, verify successful scans and Dependabot update checks, triage alerts in the repository Security tab, and record results before considering the security baseline complete. These configurations do not themselves prove a successful scan or the absence of vulnerabilities.
+
 ## Versioning
 
 The [Maida contributor policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility) defines cross-repository compatibility. This Action has its own `PATCH` releases within the `MAJOR.MINOR` compatibility line set by the `maida-ai` engine. The Action is the CI gate product, so each new release must test the engine range and functionality it claims to support. The `maida-version` input selects the actual engine package installed in a run; the Action tag alone does not select or prove a compatible engine version.
