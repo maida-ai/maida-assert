@@ -24,3 +24,11 @@ Remove credentials, tokens, private keys, customer data, and sensitive trace con
 We aim to acknowledge reports within five business days. This is a response target, not a guaranteed resolution time. Investigation and remediation time depend on the severity and complexity of the issue.
 
 We will coordinate with the reporter on follow-up information, remediation, and public disclosure. Please allow time for investigation and a fix before publishing details that could put users at risk.
+
+## Repository security controls
+
+Repository workflows declare read-only default token permissions and explicit job grants; publishing jobs request only the write scopes they need.
+
+[Dependabot configuration](.github/dependabot.yml) schedules weekly version checks for Python requirements, GitHub Actions workflows, and composite actions. Dependabot alerts and security updates are separate repository settings. Version checks do not replace reviewing dependency alerts. See the [dependency integrity guidance](README.md#dependency-and-release-integrity) for the locked installation manifests.
+
+The [CodeQL workflow](.github/workflows/codeql.yml) scans Python and GitHub Actions on pushes and pull requests targeting `main` or `release/**`, weekly, and on manual dispatch. It uses pinned actions and grants `security-events: write` only to the analysis job. Use this workflow as advanced setup; do not also enable CodeQL default setup. Verify successful scans and Dependabot update checks, triage alerts in the repository Security tab, and record results before considering the security baseline complete. These configurations do not themselves prove a successful scan or the absence of vulnerabilities.
