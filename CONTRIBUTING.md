@@ -11,4 +11,3 @@ The release workflow publishes only full stable `vMAJOR.MINOR.PATCH` tags. Movin
 ### Legacy tags and migration
 
 Historical tags remain available at their existing commits: `v1` corresponds to `v0.1.0`, `v2` to `v0.2.0`, `V3`/`v3` to `v0.3.0`, `V4`/`v4` to `v0.4.0`, and `v5` to `v0.5.0`. Tag names are case-sensitive. These are legacy references, not the moving major aliases of the new policy. In particular, `v5` does not advance with the `v0.5` compatibility alias. Preserve historical tags during compatibility-line migrations; migrate consumers to a reviewed full commit SHA or a verified compatibility alias rather than repointing a historical tag. Before adopting a genuine `v1` moving major alias at 1.0, explicitly document the migration from the existing legacy `v1` reference.
-
