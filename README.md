@@ -35,7 +35,21 @@ The [CodeQL workflow](.github/workflows/codeql.yml) scans Python and GitHub Acti
 
 The [Maida contributor policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility) defines cross-repository compatibility. This Action has its own `PATCH` releases within the `MAJOR.MINOR` compatibility line set by the `maida-ai` engine. The Action is the CI gate product, so each new release must test the engine range and functionality it claims to support. The `maida-version` input selects the actual engine package installed in a run; the Action tag alone does not select or prove a compatible engine version.
 
-For new releases, create an immutable full tag such as `v0.5.2` for an Action tested with the engine's `0.5` line, and advance the `v0.5` alias to the latest compatible Action patch. Do not move a full release tag. At version 1 or later, also maintain a moving major tag such as `v1`. There is no `v0` alias: pre-1.0 minor releases may contain incompatible changes. A full commit SHA remains the immutable reference for production workflows. The `@v5` examples below use the existing tag scheme; update them only after the replacement Action tag exists and has been verified.
+For new releases, create an immutable full tag such as `v0.5.2` for an Action tested with the engine's `0.5` line, and advance the `v0.5` alias to the latest compatible Action patch. Do not move a full release tag. At version 1 or later, also maintain a moving major tag such as `v1`. There is no `v0` alias: pre-1.0 minor releases may contain incompatible changes. A full commit SHA remains the immutable reference for production workflows. The `@v5` examples below select the latest published GitHub release under the legacy scheme; they do not track the newer `v0.5` alias. Update them only after the replacement Action release exists and has been verified.
+
+### Legacy tags and migration
+
+Historical tags remain available at their existing commits: `v1` corresponds to `v0.1.0`, `v2` to `v0.2.0`, `V3`/`v3` to `v0.3.0`, `V4`/`v4` to `v0.4.0`, and `v5` to `v0.5.0`. Tag names are case-sensitive. These are legacy references, not the moving major aliases of the new policy. In particular, `v5` does not advance with the `v0.5` compatibility alias. Preserve historical tags during the `0.6` migration; migrate consumers to a reviewed full commit SHA or a verified compatibility alias rather than repointing a historical tag. Before adopting a genuine `v1` moving major alias at 1.0, explicitly document the migration from the existing legacy `v1` reference.
+
+### Preparing v0.6.0
+
+The next planned Action release is `v0.6.0`, with a moving `v0.6` alias. Do not advertise `@v0.6` or `@v0.6.0` as usable workflow references before those tags exist. There is no `v0` alias, and `v6` is not the name of this release.
+
+1. Test the reviewed Action commit with the released `0.6` engine and record the tested engine range and supported functionality. Update the default engine input, dependency lock inputs/manifests, and E2E engine fixtures together; matching version numbers alone are insufficient.
+2. Publish the immutable `v0.6.0` tag from that reviewed commit and verify the release assets and provenance. The release workflow publishes only full stable `vMAJOR.MINOR.PATCH` tags; moving aliases, prereleases, and Python `.postN` tags are not publication inputs.
+3. Create or advance `v0.6` to the same verified release commit. Alias updates do not publish another release. Keep `v0.5` on its supported line and preserve every existing full tag and legacy reference.
+4. Verify both new remote refs resolve to that commit, then update the Action README examples (including sub-actions), the engine's producer contract and workflow generator, the website's owned templates and tests, tutorials, demos, skills, and organization profile. Propagate consumer contract snapshots from the engine. Website documentation is synced from its pinned engine release; update the engine docs and site pin rather than editing generated pages.
+5. Run the affected suites and cross-repository sync check, and build the website from its release pin. Production consumers should pin the reviewed full commit SHA. Do not release sibling packages solely to match the engine number; each sibling adopts the `0.6` line after its own compatibility checks pass.
 
 ## Usage
 
