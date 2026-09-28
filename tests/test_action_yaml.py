@@ -60,6 +60,9 @@ def test_ci_runs_contract_tests_for_action_and_documentation_changes():
     workflow = CI_WORKFLOW_PATH.read_text()
 
     assert "- README.md" in workflow
+    assert "- docs/**" in workflow
+    assert "- CONTRIBUTING.md" in workflow
+    assert "- SECURITY.md" in workflow
     assert "- action.yml" in workflow
     assert "- requirements-*.txt" in workflow
     assert "- requirements-*.lock" in workflow

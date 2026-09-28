@@ -29,6 +29,15 @@ We will coordinate with the reporter on follow-up information, remediation, and 
 
 Repository workflows declare read-only default token permissions and explicit job grants; publishing jobs request only the write scopes they need.
 
-[Dependabot configuration](.github/dependabot.yml) schedules weekly version checks for Python requirements, GitHub Actions workflows, and composite actions. Dependabot alerts and security updates are separate repository settings. Version checks do not replace reviewing dependency alerts. See the [dependency integrity guidance](README.md#dependency-and-release-integrity) for the locked installation manifests.
+[Dependabot configuration](.github/dependabot.yml) schedules weekly version checks for Python requirements, GitHub Actions workflows, and composite actions. Dependabot alerts and security updates are separate repository settings. Version checks do not replace reviewing dependency alerts. See the [dependency integrity guidance](#dependency-integrity) for the locked installation manifests.
 
 The [CodeQL workflow](.github/workflows/codeql.yml) scans Python and GitHub Actions on pushes and pull requests targeting `main` or `release/**`, weekly, and on manual dispatch. It uses pinned actions and grants `security-events: write` only to the analysis job. Use this workflow as advanced setup; do not also enable CodeQL default setup. Verify successful scans and Dependabot update checks, triage alerts in the repository Security tab, and record results before considering the security baseline complete. These configurations do not themselves prove a successful scan or the absence of vulnerabilities.
+
+## Dependency integrity
+
+Third-party Actions are pinned to full commit SHAs in the composite Actions, repository workflows, and examples. Pin `maida-ai/maida-assert` itself to a reviewed full commit SHA in consumer workflows too; the `@v5` and `@main` examples are discovery references and may move.
+
+The default Maida version installs from `requirements-maida.lock`, including exact transitive versions and SHA-256 package hashes. Installation requires binary wheels and fails if none match the chosen Python/platform; it never falls back to an unreviewed source build. This locks packages installed by the Action, not arbitrary packages already installed in the consumer environment. Other explicit `maida-version` values preserve the configurable installation path and emit a warning that they bypass the lock. Review those dependencies separately; a Git commit pin alone does not lock transitive Python dependencies.
+
+
+See [dependency maintenance](CONTRIBUTING.md#dependency-maintenance) for lock refreshes and [release provenance](CONTRIBUTING.md#tagged-release-provenance) for archive verification.
