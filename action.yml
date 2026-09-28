@@ -66,6 +66,7 @@ runs:
   using: 'composite'
   steps:
     - name: Validate trace source, baseline, and policy
+      id: validation
       env:
         AGENT_SCRIPT: ${{ inputs.agent-script }}
         TRACE_COMMAND: ${{ inputs.trace-command }}
@@ -103,6 +104,7 @@ runs:
         enable-cache: 'false'
 
     - name: Install Maida
+      id: install
       env:
         MAIDA_VERSION: '${{ inputs.maida-version }}'
       shell: bash
@@ -176,6 +178,7 @@ runs:
         fi
 
     - name: Recheck PR identity before publication
+      id: identity
       if: steps.trust.outputs.pr_number != ''
       shell: bash
       env:
@@ -214,12 +217,13 @@ runs:
         EXTRA_ARGS: ${{ inputs.extra-args }}
         MAIDA_VERSION: ${{ inputs.maida-version }}
         ACCEPT_COMMAND_ENABLED: ${{ inputs.accept-command-enabled }}
+        VERDICT: ${{ steps.check.outputs.verdict }}
       run: |
         {
           echo ""
           echo "---"
           echo ""
-          if [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then
+          if [ "$VERDICT" = "fail" ] && [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then
             echo "### Accept this intentional change"
             echo ""
             echo 'After reviewing the diff and trace, a repository maintainer can comment `/maida accept [optional reason]` on this PR.'
@@ -332,3 +336,16 @@ runs:
           echo "Maida blocking evaluation did not authorize this commit. Review the verdict, configuration acceptance, and check publication above."
           exit 1
         fi
+
+    - name: Summarize the next safe action
+      if: always()
+      shell: bash
+      env:
+        VALIDATION: ${{ steps.validation.outcome }}
+        TRUST: ${{ steps.trust.outcome }}
+        INSTALL: ${{ steps.install.outcome }}
+        GATE: ${{ steps.gate.outcome }}
+        IDENTITY: ${{ steps.identity.outcome }}
+        CHECK: ${{ steps.check.outcome }}
+        PUBLICATION: ${{ steps.publish-check.outcome }}
+      run: python3 -I "$GITHUB_ACTION_PATH/scripts/workflow_summary.py"

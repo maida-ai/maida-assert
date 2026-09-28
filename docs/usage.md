@@ -6,6 +6,21 @@ The report shows a pass/fail/inconclusive verdict, top behavior changes and fail
 
 Blocking and acceptance features require a coordinated Action revision. Pin a reviewed full SHA and apply the repository settings below, including when using `maida init --github`.
 
+## Read your first report
+
+The coordinated Action revision adds **Next safe action** to the named check, PR report and workflow summary. The workflow summary remains available when setup fails before a report can be published. These additions are not part of legacy `v5`.
+
+- **PASS:** review the observed coverage and confirm the required checks belong to the current PR head; continue your normal correctness and security review.
+- **FAIL:** reproduce the failed check locally and inspect its trace. Fix unintended behavior; accept an intentional baseline change only after reviewing it, then require fresh results on the resulting head.
+- **INCONCLUSIVE:** inspect missing evidence and budget feasibility before paying for more trials. Preserve the stated requirement; repeatedly rerunning an infeasible budget cannot establish it.
+- **Configuration awaiting acceptance:** review the configuration diff against the trusted base. Acceptance is bound to the current head and digest; changed policy needs separate review.
+- **Report-only or no behavioral gating metrics:** review candidate invariants before committing a policy that enforces them. An observation is not merge authorization.
+- **Setup or publication incomplete:** follow the first failing step in the workflow summary. Missing traces, malformed reports and insufficient token permissions have different recovery instructions; none is a behavioral PASS.
+
+The `/maida accept` hint appears only for a failed baseline report when the acceptance workflow is enabled. It is not a remedy for missing evidence. If the named check could not be published, follow the workflow summary even if the CLI report says PASS.
+
+A fail-fast stop caused by an observed gating invariant violation is a behavioral FAIL, even when fewer trials ran than the budget. A process failure or an early stop without decisive invariant evidence remains a setup error.
+
 ## Usage
 
 Add a workflow to your repository (for example `.github/workflows/maida-check.yml`):

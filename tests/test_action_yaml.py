@@ -307,7 +307,7 @@ def test_report_advertises_accept_command_only_when_enabled():
         "${{ inputs.accept-command-enabled }}"
     )
     script = append_step["run"]
-    assert 'if [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then' in script
+    assert 'if [ "$VERDICT" = "fail" ] && [ "$ACCEPT_COMMAND_ENABLED" = "true" ] && [ -n "$BASELINE" ]; then' in script
     assert "/maida accept [optional reason]" in script
 
 

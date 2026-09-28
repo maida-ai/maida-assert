@@ -58,9 +58,9 @@ def snapshot(name, text, directory, result):
     expected_text = expected_text.replace("<head-sha>", result.steps["trust"]["outputs"]["head_sha"])
     # Bind expected CLI links to the actual trusted snapshot; do not hide content drift.
     baseline = result.steps["trust"]["outputs"]["baseline"]
-    cli, suffix = expected_text.split("\n---\n\n### Accept this intentional change", 1)
+    cli, suffix = expected_text.split("\n---\n", 1)
     cli = cli.replace("--baseline baseline.json", f"--baseline {baseline}")
-    expected_text = cli + "\n---\n\n### Accept this intentional change" + suffix
+    expected_text = cli + "\n---\n" + suffix
     assert text == expected_text, f"Rendering changed; review {expected}"
 
 
@@ -81,10 +81,12 @@ def test_gate_verdict_and_comment(consumer, state, verdict, conclusion):
     assert consumer.api.checks[-1]["conclusion"] == conclusion
     assert consumer.api.checks[-1]["head_sha"] == consumer.api.head
     assert len(consumer.api.comments) == 1, result.logs
+    assert "### Next safe action" in consumer.api.comments[0]["body"]
+    assert "### Next safe action" in consumer.api.checks[-1]["output"]["summary"]
     assert (
         "a repository maintainer can comment `/maida accept [optional reason]`"
         in consumer.api.comments[0]["body"]
-    )
+    ) is (verdict == "fail")
     snapshot(verdict, consumer.api.comments[0]["body"], consumer.root, result)
 
 
@@ -255,6 +257,8 @@ def test_setup_failure_does_not_publish_a_verdict(consumer):
     assert not consumer.api.checks
     assert not consumer.api.comments
     assert "did not produce a statistical gate report" in "".join(result.logs)
+    assert "### Next safe action" in "".join(result.logs)
+    assert "exactly one completed Maida run" in "".join(result.logs)
 
 
 def test_read_only_check_token_warns_without_losing_failure(consumer):
@@ -329,6 +333,7 @@ def test_check_publication_failure_cannot_authorize_pass(consumer, mode):
     assert result.steps["check"]["outputs"]["verdict"] == "pass"
     assert not consumer.api.checks
     assert "Could not publish" in "".join(result.logs)
+    assert "A maintainer should check checks: write" in "".join(result.logs)
 
 
 @pytest.mark.parametrize("regressed", [False, True])
@@ -378,6 +383,7 @@ def test_missing_new_sidecar_cannot_reuse_previous_success(consumer):
     assert "could not read Maida report" in "".join(result.logs)
     assert len(consumer.api.checks) == count
     assert "Incomplete report" not in consumer.api.comments[0]["body"]
+    assert "Inspect the report schema, trial evidence" in "".join(result.logs)
 
 
 def test_planted_candidate_has_no_write_credential_and_cannot_inject_writer(consumer):

@@ -49,6 +49,10 @@ Only a behavioral PASS with accepted configuration and successful check publicat
 
 Configuration: **unchanged**. Policy always comes from the trusted PR base. See the named check for revision and configuration hashes.
 
+### Next safe action
+
+Reproduce the failed check locally using the instructions below and inspect the trace before changing code or baseline. Fix an unintended regression; accept a baseline change only after reviewing why the behavior is expected. Acceptance still requires fresh gate results on the new PR head.
+
 ---
 
 ### Accept this intentional change
