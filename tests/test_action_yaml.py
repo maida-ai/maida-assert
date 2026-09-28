@@ -17,8 +17,12 @@ def _load_action():
     return yaml.safe_load(ACTION_PATH.read_text())
 
 
-def _readme_yaml_blocks():
-    readme = README_PATH.read_text()
+def _documentation_text():
+    return README_PATH.read_text() + "\n" + (REPO_ROOT / "docs/acceptance.md").read_text()
+
+
+def _documentation_yaml_blocks():
+    readme = _documentation_text()
     blocks = []
     in_yaml = False
     current = []
@@ -36,10 +40,10 @@ def _readme_yaml_blocks():
     return blocks
 
 
-def test_action_and_readme_match_python_owned_current_main_contract():
+def test_action_and_documentation_match_python_owned_current_main_contract():
     contract = json.loads(CONTRACT_PATH.read_text())
     action = _load_action()
-    readme = README_PATH.read_text()
+    readme = _documentation_text()
     gate_step = next(
         step for step in action["runs"]["steps"] if step.get("id") == "gate"
     )
@@ -320,16 +324,16 @@ def test_maida_version_description_documents_run_command_coupling():
     assert 'Default is "v0.5' in description
 
 
-def test_readme_uses_maida_ai_package_for_local_install():
-    readme = (REPO_ROOT / "README.md").read_text()
+def test_documentation_uses_maida_ai_package_for_local_install():
+    readme = _documentation_text()
     assert (
         'uv add "maida-ai>=0.5"' in readme
     )
     assert "uv add maida\n" not in readme
 
 
-def test_readme_workflows_use_current_action_version():
-    readme = README_PATH.read_text()
+def test_documentation_workflows_use_current_action_version():
+    readme = _documentation_text()
     assert "maida-ai/maida-assert@v5" in readme
     assert "maida-ai/maida-assert@V4" not in readme
     assert "maida-ai/maida-assert@V5" not in readme
@@ -338,18 +342,18 @@ def test_readme_workflows_use_current_action_version():
     assert "maida-ai/maida-assert@V3" not in readme
 
 
-def test_readme_describes_current_pr_comment_contract():
-    readme = README_PATH.read_text()
+def test_documentation_describes_current_pr_comment_contract():
+    readme = _documentation_text()
     assert "pass/fail/inconclusive verdict" in readme
     assert "top behavior changes" in readme
     assert "stable reason code" in readme
-    assert "concise\nnext steps" in readme
+    assert "concise next steps" in " ".join(readme.split())
     assert "reruns update the existing Maida marker comment in place" in readme
     assert "`maida accept --reason ...` path" in readme
 
 
-def test_readme_documents_baseline_acceptance_workflow():
-    readme = README_PATH.read_text()
+def test_documentation_documents_baseline_acceptance_workflow():
+    readme = _documentation_text()
     assert "intentional behavior change" in readme
     assert "maida diff --baseline baselines/my_agent.json" in readme
     assert (
@@ -359,13 +363,13 @@ def test_readme_documents_baseline_acceptance_workflow():
     assert "git diff baselines/my_agent.json" in readme
     assert "previous baseline hash" in readme
     assert (
-        "Do not use `maida accept` for a\nregression you have not inspected" in readme
+        "Do not use `maida accept` for a regression you have not inspected" in " ".join(readme.split())
     )
 
 
-def test_readme_pr_workflows_declare_minimal_permissions():
+def test_documentation_pr_workflows_declare_minimal_permissions():
     pr_workflows = [
-        block for block in _readme_yaml_blocks() if "on: [pull_request]" in block
+        block for block in _documentation_yaml_blocks() if "on: [pull_request]" in block
     ]
     assert pr_workflows
     for block in pr_workflows:
@@ -377,8 +381,8 @@ def test_readme_pr_workflows_declare_minimal_permissions():
             }
 
 
-def test_readme_no_comment_workflow_omits_pr_write_permission():
-    workflows = [yaml.safe_load(block) for block in _readme_yaml_blocks()
+def test_documentation_no_comment_workflow_omits_pr_write_permission():
+    workflows = [yaml.safe_load(block) for block in _documentation_yaml_blocks()
                  if "post-comment: 'false'" in block]
     assert len(workflows) == 1
     workflow = workflows[0]
@@ -440,8 +444,8 @@ def test_public_files_use_current_branding():
     assert leaks == []
 
 
-def test_readme_documents_write_back_security_and_dispatch_contract():
-    readme = README_PATH.read_text()
+def test_documentation_documents_write_back_security_and_dispatch_contract():
+    readme = _documentation_text()
     assert "maida-ai/maida-assert/write-back@" in readme
     assert "contents: write" in readme
     assert "same-repository pull requests only" in readme
@@ -454,8 +458,8 @@ def test_readme_documents_write_back_security_and_dispatch_contract():
     assert "maida-ai/maida-assert/publish-status@main" in readme
 
 
-def test_readme_documents_authorized_accept_command_workflow():
-    readme = README_PATH.read_text()
+def test_documentation_documents_authorized_accept_command_workflow():
+    readme = _documentation_text()
     assert "maida-ai/maida-assert/accept-command@" in readme
     assert "issue_comment" in readme
     assert "accept-command-enabled: 'true'" in readme
@@ -464,8 +468,8 @@ def test_readme_documents_authorized_accept_command_workflow():
     assert "Fork pull requests" in readme
 
 
-def test_readme_documents_langfuse_trace_command_without_inline_secrets():
-    readme = README_PATH.read_text()
+def test_documentation_documents_langfuse_trace_command_without_inline_secrets():
+    readme = _documentation_text()
     assert "trace-command:" in readme
     assert "maida import langfuse --trace-id \"$LANGFUSE_TRACE_ID\"" in readme
     assert "LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}" in readme
@@ -477,7 +481,7 @@ def test_readme_documents_langfuse_trace_command_without_inline_secrets():
 
 def test_acceptance_workflow_has_a_read_only_candidate_job_and_fresh_writer():
     import re
-    workflows = [yaml.safe_load(block) for block in re.findall(r"```yaml\n(.*?)```", README_PATH.read_text(), re.S)]
+    workflows = [yaml.safe_load(block) for block in re.findall(r"```yaml\n(.*?)```", _documentation_text(), re.S)]
     workflow = next(w for w in workflows if w.get("name") == "Accept Maida Baseline")
     jobs = workflow["jobs"]
     assert set(jobs) == {"authorize", "capture", "write"}
