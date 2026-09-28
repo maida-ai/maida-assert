@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_third_party_actions_use_full_commit_shas():
-    paths = [ROOT / "README.md", *ROOT.glob("**/action.yml"),
+    paths = [ROOT / "README.md", *ROOT.glob("docs/**/*.md"),
+             *ROOT.glob("**/action.yml"),
              *ROOT.glob(".github/workflows/*.yml")]
     for path in paths:
         for reference in re.findall(r"\buses:\s*([^\s#]+)", path.read_text()):

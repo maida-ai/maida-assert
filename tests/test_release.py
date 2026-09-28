@@ -12,7 +12,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("case", ["valid", "branch", "wrong-commit"])
+@pytest.mark.parametrize("case", [
+    "valid", "valid-zero", "branch", "wrong-commit", "major-alias",
+    "minor-alias", "uppercase", "leading-zero", "metadata", "prerelease",
+])
 def test_release_archive(tmp_path, case):
     source = tmp_path / "source"
     source.mkdir()
@@ -27,13 +30,22 @@ def test_release_archive(tmp_path, case):
     (source / "untracked-secret").write_text("must not ship")
     output = tmp_path / "release output"
     env = {**os.environ, "GITHUB_SHA": commit, "GITHUB_REF": "refs/tags/v1.2.3"}
+    if case == "valid-zero":
+        env["GITHUB_REF"] = "refs/tags/v0.6.0"
     if case == "branch":
         env["GITHUB_REF"] = "refs/heads/main"
     if case == "wrong-commit":
         env["GITHUB_SHA"] = "0" * 40
+    rejected_tags = {
+        "major-alias": "v5", "minor-alias": "v0.6", "uppercase": "V4",
+        "leading-zero": "v01.6.0", "metadata": "v0.6.0.post1",
+        "prerelease": "v0.6.0-rc.1",
+    }
+    if case in rejected_tags:
+        env["GITHUB_REF"] = f"refs/tags/{rejected_tags[case]}"
     command = ["bash", str(ROOT / "scripts/build_release.sh"), str(output)]
     result = subprocess.run(command, cwd=source, env=env, text=True, capture_output=True)
-    if case != "valid":
+    if not case.startswith("valid"):
         assert result.returncode != 0
         assert "::error::" in result.stderr
         assert not output.exists()
@@ -51,7 +63,7 @@ def test_release_archive(tmp_path, case):
 
 def test_release_attests_and_verifies_before_publishing():
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    assert workflow.get("on", workflow.get(True)) == {"push": {"tags": ["v*"]}}
+    assert workflow.get("on", workflow.get(True)) == {"push": {"tags": ["v*.*.*"]}}
     assert workflow["permissions"] == {"contents": "read"}
     job = workflow["jobs"]["release"]
     assert job["needs"] == "test"

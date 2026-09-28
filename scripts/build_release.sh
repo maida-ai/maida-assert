@@ -2,8 +2,8 @@
 # Package only committed source; callers supply the tag event's immutable SHA.
 set -euo pipefail
 
-if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v[0-9]+(\.[0-9]+)*([.-][A-Za-z0-9.-]+)?$ ]]; then
-  echo '::error::Release builds require a version tag (vVERSION).' >&2
+if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo '::error::Release builds require a lowercase full stable tag (vMAJOR.MINOR.PATCH); moving aliases are not releases.' >&2
   exit 2
 fi
 if [[ ! "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then

@@ -8,6 +8,9 @@ on:
       - .github/workflows/**
       - .github/dependabot.yml
       - README.md
+      - CONTRIBUTING.md
+      - SECURITY.md
+      - docs/**
       - action.yml
       - accept-command/**
       - capture-acceptance/**
