@@ -1,0 +1,2 @@
+# Default CLI runtime. Other maida-version values explicitly opt out of this lock.
+maida-ai==0.5.3

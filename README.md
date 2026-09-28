@@ -46,15 +46,17 @@ Add a workflow to your repository (for example
 name: Agent Regression Check
 on: [pull_request]
 
-# Required for checkout plus sticky PR comments.
+# Read-only by default; the gate job grants only its required writes.
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   agent-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -85,6 +87,40 @@ it must create exactly one completed Maida run.
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
 | `extra-args` | no | `''` | Report-only CLI overrides (for example, `--trials 5 --max-steps 20`). Blocking mode rejects overrides; edit the base policy through review. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
+
+### Token permissions
+
+The usage example grants `contents: read` by default and adds writes only to
+the gate job. `contents: read` permits checkout and trusted base-file reads;
+`checks: write` publishes the named Maida check; `pull-requests: write` creates
+or updates the optional sticky comment. With `post-comment: 'false'`, use:
+
+```yaml
+permissions:
+  contents: read
+jobs:
+  agent-check:
+    permissions:
+      contents: read
+      checks: write
+```
+
+This is a permissions excerpt; retain the steps from the complete workflows.
+Unspecified permissions are disabled. The normal gate needs no `contents: write`,
+`actions: write`, `packages: write`, `attestations: write`, or `id-token: write`.
+The optional acceptance workflow separately grants `pull-requests: write` to
+its authorizer for replies, read-only access to capture, and `contents: write`
+plus `pull-requests: write` to its isolated writer for the baseline commit,
+dispatch, and replies. The dispatch listener additionally needs `statuses: write`
+to publish its explicit commit status. Do not copy those grants into capture.
+
+GitHub does not expose a reliable complete effective-permission inventory to
+this composite Action. **Broader token grants are not detected or rejected at
+runtime.** Use the exact job permission blocks, review workflow changes, and
+avoid substituting a broader PAT. Missing check publication rights fail blocking
+evaluation; optional comment failures remain warnings. The Action cannot reduce
+permissions already granted to a job. See GitHub's
+[token permission reference](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#permissions).
 
 ### Blocking mode and required repository settings
 
@@ -181,15 +217,17 @@ limits (no loops, no guardrail violations, max steps, etc.) defined in
 name: Agent Policy Check
 on: [pull_request]
 
-# Required for checkout plus sticky PR comments.
+# Read-only by default; the gate job grants only its required writes.
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   agent-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -210,15 +248,17 @@ For an observational run, override the trial count and a threshold via
 name: Agent Regression Check
 on: [pull_request]
 
-# Required for checkout plus sticky PR comments.
+# Read-only by default; the gate job grants only its required writes.
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   agent-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -248,12 +288,14 @@ on: [pull_request]
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   imported-trace-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     env:
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
@@ -294,14 +336,16 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
 
-# Checkout plus the Maida check; this workflow does not post PR comments.
+# Read-only by default; this workflow does not post PR comments.
 permissions:
   contents: read
-  checks: write
 
 jobs:
   agent-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -541,12 +585,15 @@ on:
     types: [maida_baseline_updated]
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
-  statuses: write
+
 jobs:
   agent-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+      statuses: write
     steps:
       - id: pr
         uses: maida-ai/maida-assert/pr-context@main
@@ -607,6 +654,79 @@ For installation, tracing your agent, and the rest of the workflow,
 see the Maida
 [getting started guide](https://github.com/maida-ai/maida/blob/main/docs/getting-started.md).
 
+## Dependency and release integrity
+
+Third-party Actions are pinned to full commit SHAs in the composite Actions,
+repository workflows, and examples. Pin `maida-ai/maida-assert` itself to a
+reviewed full commit SHA in consumer workflows too; the `@v5` and `@main`
+examples are discovery references and may move.
+
+The default Maida version installs from `requirements-maida.lock`, including
+exact transitive versions and SHA-256 package hashes. Installation requires
+binary wheels and fails if none match the chosen Python/platform; it never
+falls back to an unreviewed source build. This locks packages installed by the
+Action, not arbitrary packages already installed in the consumer environment.
+Other explicit `maida-version` values preserve the configurable installation
+path and emit a warning that they bypass the lock. Review those dependencies
+separately; a Git commit pin alone does not lock transitive Python dependencies.
+
+CI installs from `requirements-dev.lock` and `requirements-e2e.lock` with hash
+verification. The E2E workflow also pins its core workflow generator checkout;
+update that SHA deliberately when testing a coordinated core change. To refresh
+locks using the repository's pinned `uv` version, review changes to the input
+`.txt` files and regenerate all three manifests:
+
+```bash
+uv pip compile --universal --python-version 3.10 --generate-hashes requirements-dev.txt -o requirements-dev.lock
+uv pip compile --universal --python-version 3.10 --generate-hashes requirements-maida.txt -o requirements-maida.lock
+uv pip compile --universal --python-version 3.10 --generate-hashes requirements-e2e.txt -o requirements-e2e.lock
+```
+
+Run the tests below and review the version/hash diff before committing. Use
+`--upgrade` only for a deliberate dependency refresh. Update the default Action
+versions and lock input together when changing the default CLI release.
+
+### Tagged release provenance
+
+The release workflow runs on version-tag pushes after this workflow is merged.
+It tests the tagged source, archives that exact commit as `maida-assert.tar.gz`,
+generates `SHA256SUMS`, and creates GitHub build provenance using
+[`actions/attest`](https://github.com/actions/attest). It verifies the archive's
+attestation against the repository, release workflow, source commit and tag
+before publishing the archive, checksums and `provenance.jsonl` bundle together.
+The archive includes committed source only; local files are excluded. GitHub's
+automatically generated source downloads are separate and are not the attested
+artifact. This establishes source provenance, not a SLSA certification or a
+guarantee that the source is safe.
+
+Only the release job receives `contents: write` (release assets),
+`id-token: write` (signing identity), and `attestations: write` (provenance
+publication); consumers need none of these for the ordinary gate. Protect
+version tags against unauthorized creation or movement and require review of
+the release workflow. Publish a new version tag from reviewed source after CI
+passes. Existing tags/releases are not overwritten; if publication partially
+fails, inspect the existing release and assets before maintainer recovery.
+
+To verify a release produced by this workflow, set the reviewed version tag and
+full source commit, then run in an empty directory:
+
+```bash
+RELEASE_TAG=vX.Y.Z
+RELEASE_COMMIT=FULL_REVIEWED_COMMIT_SHA
+gh release download "$RELEASE_TAG" --repo maida-ai/maida-assert \
+  --pattern maida-assert.tar.gz --pattern SHA256SUMS --pattern provenance.jsonl
+sha256sum --check SHA256SUMS
+gh attestation verify maida-assert.tar.gz --repo maida-ai/maida-assert \
+  --bundle provenance.jsonl \
+  --signer-workflow maida-ai/maida-assert/.github/workflows/release.yml \
+  --source-digest "$RELEASE_COMMIT" --source-ref "refs/tags/$RELEASE_TAG"
+```
+
+See the [GitHub verification options](https://cli.github.com/manual/gh_attestation_verify).
+Checksums alone do not authenticate an artifact. Releases predating this workflow
+have no retroactive provenance guarantee; verify the selected release's assets
+and attestation before relying on it.
+
 ## Testing the Action
 
 The `Action end-to-end` job runs on every PR, including forks and documentation
@@ -622,7 +742,7 @@ Authorized acceptance runs the real CLI in a separate checkout and consumes only
 artifact bytes in a fresh writer directory. The local Git API fixture creates a
 baseline-only commit in a bare repository. The E2E runner executes the generated
 workflow event routing, separate acceptance jobs and dispatch steps directly from
-the coordinated `maida/maida/scaffold.py` generator. CI checks out core `main`;
+the coordinated `maida/maida/scaffold.py` generator. CI checks out a reviewed core commit by full SHA;
 local runs use the sibling `maida` checkout or `MAIDA_E2E_SCAFFOLD_PATH`.
 The tests exercise check/status/comment head identity,
 stale pushes, configuration acceptance, INCONCLUSIVE, and dispatch/publication
@@ -641,11 +761,14 @@ Bash, and Git are required). Use the coordinated core checkout at `../maida`
 third-party Action once:
 
 ```bash
-git clone --branch v3.0.4 --depth 1 https://github.com/marocchino/sticky-pull-request-comment.git /tmp/maida-sticky-comment
-git -C /tmp/maida-sticky-comment rev-parse HEAD
-# Expected: 0ea0beb66eb9baf113663a64ec522f60e49231c0
-uv run --python 3.12 --with-requirements requirements-dev.txt pytest -q --ignore=tests/e2e
-MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida/maida/scaffold.py uv run --python 3.12 --with-requirements requirements-e2e.txt pytest -q tests/e2e
+git init /tmp/maida-sticky-comment
+git -C /tmp/maida-sticky-comment remote add origin https://github.com/marocchino/sticky-pull-request-comment.git
+git -C /tmp/maida-sticky-comment fetch --depth 1 origin 0ea0beb66eb9baf113663a64ec522f60e49231c0
+git -C /tmp/maida-sticky-comment checkout --detach FETCH_HEAD
+uv venv --python 3.12 /tmp/maida-action-tests
+uv pip sync --python /tmp/maida-action-tests/bin/python --require-hashes --only-binary=:all: requirements-e2e.lock
+uv run --python /tmp/maida-action-tests/bin/python --no-project pytest -q --ignore=tests/e2e
+MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida/maida/scaffold.py uv run --python /tmp/maida-action-tests/bin/python --no-project pytest -q tests/e2e
 ```
 
 Tests make no external API or model calls after dependency setup. The harness

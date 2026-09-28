@@ -61,7 +61,8 @@ def test_ci_runs_contract_tests_for_action_and_documentation_changes():
 
     assert "- README.md" in workflow
     assert "- action.yml" in workflow
-    assert "- requirements-dev.txt" in workflow
+    assert "- requirements-*.txt" in workflow
+    assert "- requirements-*.lock" in workflow
     assert "- tests/**" in workflow
     assert "pytest -q" in workflow
 
@@ -365,20 +366,23 @@ def test_readme_pr_workflows_declare_minimal_permissions():
     ]
     assert pr_workflows
     for block in pr_workflows:
-        assert (
-            "permissions:\n  contents: read\n  checks: write\n  pull-requests: write"
-            in block
-        )
+        workflow = yaml.safe_load(block)
+        assert workflow["permissions"] == {"contents": "read"}
+        for job in workflow["jobs"].values():
+            assert job["permissions"] == {
+                "contents": "read", "checks": "write", "pull-requests": "write",
+            }
 
 
 def test_readme_no_comment_workflow_omits_pr_write_permission():
-    no_comment_workflows = [
-        block for block in _readme_yaml_blocks() if "post-comment: 'false'" in block
-    ]
-    assert len(no_comment_workflows) == 1
-    workflow = no_comment_workflows[0]
-    assert "permissions:\n  contents: read\n  checks: write" in workflow
-    assert "pull-requests: write" not in workflow
+    workflows = [yaml.safe_load(block) for block in _readme_yaml_blocks()
+                 if "post-comment: 'false'" in block]
+    assert len(workflows) == 1
+    workflow = workflows[0]
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["agent-check"]["permissions"] == {
+        "contents": "read", "checks": "write",
+    }
 
 
 def test_ci_workflow_uses_minimal_job_permissions():
