@@ -2,7 +2,7 @@
 name = "maida-assert-tests"
 # Virtual tooling project; Action release versions remain Git tags.
 version = "0"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.12,<3.15"
 
 [dependency-groups]
 dev = [

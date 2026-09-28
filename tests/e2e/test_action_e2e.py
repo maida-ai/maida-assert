@@ -2,6 +2,7 @@
 
 import json
 import re
+import zipfile
 from hashlib import sha256
 from pathlib import Path
 
@@ -58,9 +59,9 @@ def snapshot(name, text, directory, result):
     expected_text = expected_text.replace("<head-sha>", result.steps["trust"]["outputs"]["head_sha"])
     # Bind expected CLI links to the actual trusted snapshot; do not hide content drift.
     baseline = result.steps["trust"]["outputs"]["baseline"]
-    cli, suffix = expected_text.split("\n---\n\n### Accept this intentional change", 1)
+    cli, suffix = expected_text.split("\n---\n", 1)
     cli = cli.replace("--baseline baseline.json", f"--baseline {baseline}")
-    expected_text = cli + "\n---\n\n### Accept this intentional change" + suffix
+    expected_text = cli + "\n---\n" + suffix
     assert text == expected_text, f"Rendering changed; review {expected}"
 
 
@@ -81,10 +82,12 @@ def test_gate_verdict_and_comment(consumer, state, verdict, conclusion):
     assert consumer.api.checks[-1]["conclusion"] == conclusion
     assert consumer.api.checks[-1]["head_sha"] == consumer.api.head
     assert len(consumer.api.comments) == 1, result.logs
+    assert "### Next safe action" in consumer.api.comments[0]["body"]
+    assert "### Next safe action" in consumer.api.checks[-1]["output"]["summary"]
     assert (
         "a repository maintainer can comment `/maida accept [optional reason]`"
         in consumer.api.comments[0]["body"]
-    )
+    ) is (verdict == "fail")
     snapshot(verdict, consumer.api.comments[0]["body"], consumer.root, result)
 
 
@@ -241,6 +244,48 @@ def test_generated_acceptance_dispatch_failure_reports_written_head_and_retries(
     assert consumer.api.dispatches[-1]["client_payload"]["sha"] == written
 
 
+@pytest.mark.parametrize("tooling_pyproject", [False, True])
+def test_generated_dependency_setup_runs_in_gate_and_acceptance_capture(consumer, tooling_pyproject):
+    # A local wheel makes the agent genuinely depend on installation without
+    # requiring a package index, a build backend, or an external service.
+    wheels = consumer.root / "dependencies"
+    wheels.mkdir()
+    wheel = wheels / "onboarding_fixture-0.0.1-py3-none-any.whl"
+    info = "onboarding_fixture-0.0.1.dist-info"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("onboarding_fixture/__init__.py", "READY = True\n")
+        archive.writestr(f"{info}/METADATA", "Metadata-Version: 2.3\nName: onboarding-fixture\nVersion: 0.0.1\n")
+        archive.writestr(f"{info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
+        archive.writestr(f"{info}/RECORD", "")
+    (consumer.root / "requirements.txt").write_text(f"./dependencies/{wheel.name}\n")
+    if tooling_pyproject:
+        (consumer.root / "pyproject.toml").write_text('[tool.pytest.ini_options]\ntestpaths = ["tests"]\n')
+    agent = consumer.root / "agent.py"
+    # Keep the module docstring and future import valid while adding a real dependency.
+    agent.write_text(agent.read_text().replace("from maida", "import onboarding_fixture\nassert onboarding_fixture.READY\n\nfrom maida", 1))
+    consumer.env["UV_OFFLINE"] = "true"
+    consumer.run("git", "add", "dependencies", "requirements.txt", "agent.py")
+    if tooling_pyproject:
+        consumer.run("git", "add", "pyproject.toml")
+    consumer.run("git", "commit", "-m", "Consumer requires a project package")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    consumer.base = consumer.api.head
+    workflow = Workflow(consumer, "pull_request", pr_event(consumer))
+    if not workflow.has_parameterized_generator:
+        pytest.skip("The separately pinned legacy generator has no dependency setup")
+    result = workflow.run().jobs["agent-check"]["runner"]
+    assert not result.failed, result.logs
+    assert "Install project dependencies" in result.executed
+    consumer.regress()
+    accepted = Workflow(consumer, "issue_comment", comment_event()).run()
+    capture = accepted.jobs["capture"]["runner"]
+    assert not capture.failed, capture.logs
+    assert "Install project dependencies" in capture.executed
+    assert accepted.jobs["write"]["result"] == "success"
+    assert all("Install project dependencies" not in accepted.jobs[job]["runner"].executed for job in ("authorize", "write"))
+
+
 def test_trace_command_ingests_one_completed_run(consumer):
     result = gate(consumer, **{"agent-script": "", "trace-command": "python agent.py"})
     assert not result.failed, result.logs
@@ -255,6 +300,8 @@ def test_setup_failure_does_not_publish_a_verdict(consumer):
     assert not consumer.api.checks
     assert not consumer.api.comments
     assert "did not produce a statistical gate report" in "".join(result.logs)
+    assert "### Next safe action" in "".join(result.logs)
+    assert "exactly one completed Maida run" in "".join(result.logs)
 
 
 def test_read_only_check_token_warns_without_losing_failure(consumer):
@@ -329,6 +376,7 @@ def test_check_publication_failure_cannot_authorize_pass(consumer, mode):
     assert result.steps["check"]["outputs"]["verdict"] == "pass"
     assert not consumer.api.checks
     assert "Could not publish" in "".join(result.logs)
+    assert "A maintainer should check checks: write" in "".join(result.logs)
 
 
 @pytest.mark.parametrize("regressed", [False, True])
@@ -378,6 +426,7 @@ def test_missing_new_sidecar_cannot_reuse_previous_success(consumer):
     assert "could not read Maida report" in "".join(result.logs)
     assert len(consumer.api.checks) == count
     assert "Incomplete report" not in consumer.api.comments[0]["body"]
+    assert "Inspect the report schema, trial evidence" in "".join(result.logs)
 
 
 def test_planted_candidate_has_no_write_credential_and_cannot_inject_writer(consumer):

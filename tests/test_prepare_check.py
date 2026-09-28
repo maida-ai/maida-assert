@@ -143,7 +143,7 @@ def test_build_check_payload_maps_verdicts(verdict, passed, conclusion):
     assert payload["output"]["title"] == f"Maida statistical gate: {verdict.upper()}"
 
 
-def test_summary_lists_assertion_verdict_interval_threshold_and_rerun_link():
+def test_summary_lists_assertion_verdict_interval_threshold_and_workflow_link():
     payload = build_check_payload(
         _report("inconclusive", passed=None),
         head_sha="b" * 40,
@@ -156,7 +156,7 @@ def test_summary_lists_assertion_verdict_interval_threshold_and_rerun_link():
     assert "0.439-1.000" in summary
     assert "0.900" in summary
     assert "3 trials" in summary
-    assert "[Re-run this workflow]" in summary
+    assert "[Open this workflow run]" in summary
     assert "actions/runs/456" in summary
 
 
@@ -349,6 +349,48 @@ def test_process_health_alone_does_not_certify_report_only_metrics():
     assert payload["conclusion"] == "failure"
 
 
+@pytest.mark.parametrize(
+    "verdict,passed,options,expected",
+    [
+        ("pass", True, {}, "Review the observed coverage"),
+        ("fail", False, {}, "Reproduce the failed check locally"),
+        ("inconclusive", None, {}, "Check whether the configured trial budget"),
+        ("pass", True, {"configuration_blocked": True}, "Review the configuration diff"),
+        ("pass", True, {"mode": "report-only"}, "Review the candidate invariants"),
+    ],
+)
+def test_every_valid_report_names_the_next_safe_action(verdict, passed, options, expected):
+    payload = build_check_payload(
+        _report_v2(verdict, passed=passed), head_sha="a" * 40,
+        details_url="https://example.invalid/run", **options,
+    )
+    summary = payload["output"]["summary"]
+    assert "### Next safe action" in summary
+    assert expected in summary
+    if verdict == "inconclusive":
+        assert "Do not lower the requirement" in summary
+        assert "[Re-run this workflow]" not in summary
+
+
+def test_no_behavioral_gating_metrics_names_policy_review_as_next_action():
+    report = _report_v2()
+    report["aggregate_results"] = report["aggregate_results"][2:]
+    summary = build_check_payload(
+        report, head_sha="a" * 40, details_url="https://example.invalid/run"
+    )["output"]["summary"]
+    assert "Review the candidate invariants" in summary
+
+
+def test_next_action_is_also_in_pr_markdown(tmp_path):
+    report, markdown, output = (tmp_path / name for name in ("report.json", "report.md", "check.json"))
+    report.write_text(json.dumps(_report_v2()))
+    markdown.write_text("CLI report\n")
+    main(["--report", str(report), "--output", str(output), "--head-sha", "a" * 40,
+          "--details-url", "https://example.invalid/run", "--markdown", str(markdown)])
+    assert "### Next safe action" in markdown.read_text()
+    assert "Review the observed coverage" in markdown.read_text()
+
+
 def test_cli_rejects_exit_status_conflicting_with_verdict(tmp_path):
     report = tmp_path / "report.json"
     report.write_text(json.dumps(_report_v2()))
@@ -369,3 +411,67 @@ def test_cli_rejects_empty_markdown_before_publishing(tmp_path):
         main(["--report", str(report), "--output", str(output), "--head-sha", "a" * 40,
               "--details-url", "https://example.invalid/run", "--markdown", str(markdown)])
     assert not output.exists()
+
+
+def _invariant_failure_report():
+    report = _report_v2("fail", passed=False)
+    report["metadata"].update(
+        trials_used=1, abort_reason="invariant_violation",
+        stopping_rule="fixed_n_fail_fast",
+    )
+    report["trials"] = [{"trace_id": "observed-failed-trace"}]
+    report["aggregate_results"] = report["aggregate_results"][:1]
+    result = report["aggregate_results"][0]
+    result.update(trials_used=1, stopping_rule="fixed_n_fail_fast", trial_outcomes=[False])
+    return report
+
+
+def test_fail_fast_invariant_violation_is_a_behavioral_fail_with_evidence():
+    payload = build_check_payload(
+        _invariant_failure_report(), head_sha="a" * 40,
+        details_url="https://example.invalid/run",
+    )
+    assert payload["conclusion"] == "failure"
+    assert payload["output"]["title"] == "Maida statistical gate: FAIL"
+    summary = payload["output"]["summary"]
+    assert "1/3 trials used" in summary
+    assert "violated in 1/1 trials" in summary
+    assert "Reproduce the failed check locally" in summary
+
+
+def test_fail_fast_invariant_report_reaches_check_and_comment(tmp_path, capsys):
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(_invariant_failure_report()))
+    payload_path = tmp_path / "payload.json"
+    markdown_path = tmp_path / "report.md"
+    markdown_path.write_text("## Maida verdict: FAIL\n\nA required tool was omitted.\n")
+    status = main([
+        "--report", str(report_path), "--output", str(payload_path),
+        "--markdown", str(markdown_path), "--head-sha", "a" * 40,
+        "--details-url", "https://example.invalid/run", "--cli-status", "1",
+    ])
+    assert status == 0
+    assert json.loads(payload_path.read_text())["conclusion"] == "failure"
+    assert "Next safe action" in markdown_path.read_text()
+    assert capsys.readouterr().out == "verdict=fail\nconclusion=failure\n"
+
+
+@pytest.mark.parametrize("invalid", ["process-error", "pass", "inconclusive", "no-violation", "measured-only", "report-only"])
+def test_abort_reason_requires_a_decisive_gating_invariant(invalid):
+    report = _invariant_failure_report()
+    result = report["aggregate_results"][0]
+    if invalid == "process-error":
+        report["metadata"]["abort_reason"] = "agent_process_failure"
+    elif invalid in {"pass", "inconclusive"}:
+        report["verdict"] = result["verdict"] = invalid
+        report["passed"] = True if invalid == "pass" else None
+    elif invalid == "no-violation":
+        result["evidence"]["violations"] = 0
+    elif invalid == "measured-only":
+        measured = _report_v2("fail", passed=False)["aggregate_results"][1]
+        measured["trials_used"] = 1
+        report["aggregate_results"] = [measured]
+    else:
+        result.update(mode="report_only", verdict=None)
+    with pytest.raises(ReportError, match="abort"):
+        build_check_payload(report, head_sha="a" * 40, details_url="https://example.invalid/run")

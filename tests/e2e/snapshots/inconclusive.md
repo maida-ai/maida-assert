@@ -47,11 +47,11 @@ Only a behavioral PASS with accepted configuration and successful check publicat
 
 Configuration: **unchanged**. Policy always comes from the trusted PR base. See the named check for revision and configuration hashes.
 
+### Next safe action
+
+Check whether the configured trial budget can support the stated threshold and confidence, and inspect which evidence is missing. Agree on an affordable valid budget before collecting more trials. Do not lower the requirement or repeatedly rerun an infeasible budget to obtain PASS.
+
 ---
-
-### Accept this intentional change
-
-After reviewing the diff and trace, a repository maintainer can comment `/maida accept [optional reason]` on this PR.
 
 <details>
 <summary><i>Reproducibility Instructions</i></summary>

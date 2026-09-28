@@ -44,6 +44,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build release archive and checksums
+        id: archive
         shell: bash
         run: bash scripts/build_release.sh "$RUNNER_TEMP/release"
       - name: Attest release archive
@@ -60,13 +61,21 @@ jobs:
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
             --source-digest "$GITHUB_SHA" --source-ref "$GITHUB_REF"
       - name: Publish release assets
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          IS_PRERELEASE: ${{ steps.archive.outputs.prerelease }}
         run: |
+          release_flags=(--verify-tag --generate-notes)
+          case "$IS_PRERELEASE" in
+            true) release_flags+=(--prerelease --latest=false) ;;
+            false) ;;
+            *) echo '::error::Missing or invalid release classification.' >&2; exit 2 ;;
+          esac
           cp "$ATTESTATION_BUNDLE" "$RUNNER_TEMP/release/provenance.jsonl"
           cd "$RUNNER_TEMP/release"
           sha256sum --check SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --verify-tag --generate-notes \
+            "${release_flags[@]}" \
             maida-assert.tar.gz SHA256SUMS provenance.jsonl

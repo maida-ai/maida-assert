@@ -68,11 +68,48 @@ def _summary_footer(
         lines.extend(
             [
                 "",
-                "Insufficient evidence is not a behavioral PASS. "
-                f"[Re-run this workflow]({details_url}) to collect a fresh trial set.",
+                "Insufficient evidence is not a behavioral PASS.",
             ]
         )
     return "\n".join(lines)
+
+
+def next_action(verdict: str, *, mode: str, configuration_blocked: bool, behavioral_metrics: bool) -> str:
+    """Suggest an action without turning acceptance or missing evidence into PASS."""
+    if configuration_blocked:
+        action = (
+            "Review the configuration diff against the trusted PR base. A maintainer must "
+            "explicitly accept this exact head and configuration digest through the trusted "
+            "repository setting, then rerun the gate. A changed policy needs separate review; "
+            "baseline acceptance does not approve policy changes."
+        )
+    elif verdict == "fail":
+        action = (
+            "Reproduce the failed check locally using the instructions below and inspect the "
+            "trace before changing code or baseline. Fix an unintended regression; accept a "
+            "baseline change only after reviewing why the behavior is expected. Acceptance "
+            "still requires fresh gate results on the new PR head."
+        )
+    elif verdict == "inconclusive":
+        action = (
+            "Check whether the configured trial budget can support the stated threshold and "
+            "confidence, and inspect which evidence is missing. Agree on an affordable valid "
+            "budget before collecting more trials. Do not lower the requirement or repeatedly "
+            "rerun an infeasible budget to obtain PASS."
+        )
+    elif mode == "report-only" or not behavioral_metrics:
+        action = (
+            "Review the candidate invariants against the observed runs and keep only explicit "
+            "contracts you intend to enforce. Commit the reviewed policy on the base branch, "
+            "then run a fresh gate. Report-only observations do not authorize merge."
+        )
+    else:
+        action = (
+            "Review the observed coverage and confirm the required checks belong to this PR "
+            "head. Continue normal code review and correctness/security checks; this behavioral "
+            "PASS covers the observed executions only."
+        )
+    return "### Next safe action\n\n" + action
 
 
 def _summary_v1(report: dict[str, Any], details_url: str) -> str:
@@ -308,7 +345,8 @@ def build_check_payload(
     legacy = report["report_version"] == LEGACY_REPORT_VERSION
     metadata = report["metadata"]
     used = metadata["trials_completed" if legacy else "trials_used"]
-    if used == 0 or metadata.get("abort_reason") is not None:
+    abort_reason = metadata.get("abort_reason")
+    if used == 0 or abort_reason not in (None, "invariant_violation"):
         raise ReportError("missing trial evidence or aborted evaluation; rerun the gate")
     trials = report.get("trials")
     if not isinstance(trials, list) or len(trials) != used:
@@ -319,6 +357,14 @@ def build_check_payload(
     if len(set(identities)) != used:
         raise ReportError("observed trials must identify distinct traces")
     gating = [r for r in report["aggregate_results"] if legacy or r["mode"] == "gating"]
+    if abort_reason == "invariant_violation" and (
+        legacy or verdict != "fail" or not any(
+            result["kind"] == "invariant" and result["verdict"] == "fail"
+            and result["evidence"]["violations"] > 0
+            for result in gating
+        )
+    ):
+        raise ReportError("invariant abort requires an observed gating invariant violation")
     for result in gating:
         count = _non_negative_integer(
             result.get("trials" if legacy else "trials_used"), "metric trials"
@@ -335,7 +381,8 @@ def build_check_payload(
 
     name = CHECK_NAME
     conclusion = VERDICT_CONCLUSIONS[verdict]
-    if not any(r["check_name"] != "agent_process" for r in gating):
+    behavioral_metrics = any(r["check_name"] != "agent_process" for r in gating)
+    if not behavioral_metrics:
         conclusion = "failure"
         summary += "\n\nNo gating metrics: report-only evidence cannot certify this change."
     if configuration_blocked:
@@ -347,6 +394,10 @@ def build_check_payload(
         summary += "\n\nReport-only mode: this report is not merge authorization."
     else:
         summary += "\n\nBlocking mode: FAIL and INCONCLUSIVE prevent approval."
+    summary += "\n\n" + next_action(
+        verdict, mode=mode, configuration_blocked=configuration_blocked,
+        behavioral_metrics=behavioral_metrics,
+    )
 
     return {
         "name": name,
@@ -418,6 +469,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "Policy always comes from the trusted PR base. "
                         "See the named check for revision and configuration hashes.\n"
                     )
+            # Reuse the checked decision so the PR comment and named check agree.
+            action = payload["output"]["summary"].split("### Next safe action\n\n", 1)[1]
+            action = action.split("\n\nTrusted policy revision:", 1)[0]
+            markdown.write("\n### Next safe action\n\n" + action + "\n")
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"verdict={report['verdict']}")
     print(f"conclusion={payload['conclusion']}")
