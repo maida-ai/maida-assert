@@ -244,7 +244,8 @@ def test_generated_acceptance_dispatch_failure_reports_written_head_and_retries(
     assert consumer.api.dispatches[-1]["client_payload"]["sha"] == written
 
 
-def test_generated_dependency_setup_runs_in_gate_and_acceptance_capture(consumer):
+@pytest.mark.parametrize("tooling_pyproject", [False, True])
+def test_generated_dependency_setup_runs_in_gate_and_acceptance_capture(consumer, tooling_pyproject):
     # A local wheel makes the agent genuinely depend on installation without
     # requiring a package index, a build backend, or an external service.
     wheels = consumer.root / "dependencies"
@@ -257,11 +258,15 @@ def test_generated_dependency_setup_runs_in_gate_and_acceptance_capture(consumer
         archive.writestr(f"{info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
         archive.writestr(f"{info}/RECORD", "")
     (consumer.root / "requirements.txt").write_text(f"./dependencies/{wheel.name}\n")
+    if tooling_pyproject:
+        (consumer.root / "pyproject.toml").write_text('[tool.pytest.ini_options]\ntestpaths = ["tests"]\n')
     agent = consumer.root / "agent.py"
     # Keep the module docstring and future import valid while adding a real dependency.
     agent.write_text(agent.read_text().replace("from maida", "import onboarding_fixture\nassert onboarding_fixture.READY\n\nfrom maida", 1))
     consumer.env["UV_OFFLINE"] = "true"
     consumer.run("git", "add", "dependencies", "requirements.txt", "agent.py")
+    if tooling_pyproject:
+        consumer.run("git", "add", "pyproject.toml")
     consumer.run("git", "commit", "-m", "Consumer requires a project package")
     consumer.run("git", "push", "origin", "candidate")
     consumer.update_head()

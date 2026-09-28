@@ -64,7 +64,7 @@ MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida
 
 The local tests exercise verdicts, PR comments, trusted base policy, acceptance and dispatch using a temporary consumer repo and loopback GitHub fixtures. Agents are simulated; no model or external API calls occur after setup. Review `consumer/comment.actual.md` before updating report snapshots.
 
-With the parameterized `init` generator, the suite also installs a real local-wheel dependency into separate temporary Python environments for the gate and acceptance capture. It consumes the generated entrypoint and baseline paths and stays offline. The older generator pinned in CI predates dependency setup, so that one test explicitly skips there; update the reviewed generator pin after the coordinated core change is available remotely.
+With the parameterized `init` generator, the suite also installs a real local-wheel dependency into separate temporary Python environments for the gate and acceptance capture, including repositories with a tools-only `pyproject.toml` and `requirements.txt`. It consumes the generated entrypoint and baseline paths and stays offline. The older generator pinned in CI predates dependency setup, so those cases explicitly skip there; update the reviewed generator pin after the coordinated core change is available remotely.
 
 Require **Action end-to-end** in this repository’s branch protection. The weekly/manual report-only smoke tests runner installation and check publication with a simulated agent, a five-minute timeout and $0 model spend. It does not test live PR comments or merge protection.
 
