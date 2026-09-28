@@ -5,9 +5,10 @@
 Follow the [cross-repository compatibility policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility). The Action uses the tested engine’s `MAJOR.MINOR` line and its own `PATCH` number. State the tested engine range in each release; matching numbers alone do not establish compatibility. The `maida-version` input selects the engine independently.
 
 - Full `vMAJOR.MINOR.PATCH` tags are immutable stable releases.
+- Full `vMAJOR.MINOR.PATCHrcN` tags (for example, `v0.6.0rc1`) publish immutable release-candidate artifacts as GitHub prereleases without changing the latest stable release.
 - Before 1.0, advance a minor alias such as `v0.5` only after verifying its release. There is no `v0` alias.
 - From 1.0, use moving major aliases. Document migration of the existing legacy `v1` before reusing that name.
-- Alias updates, prereleases and Python `.postN` tags do not publish release artifacts.
+- Alias updates, other prerelease spellings and Python `.postN` tags do not publish release artifacts.
 - Pin a reviewed full commit SHA in production workflows.
 
 ### Legacy tags and migration
@@ -16,7 +17,7 @@ Legacy tags remain on their original commits: `v1` → `v0.1.0`, `v2` → `v0.2.
 
 ## Dependency maintenance
 
-`pyproject.toml` declares the `dev` (unit), `e2e` (unit + released engine), and `maida` (runtime engine) groups. Commit `uv.lock` and use locked installs in CI. This is a virtual test project; its tooling version is separate from Action release tags.
+`pyproject.toml` declares the `dev` (unit), `e2e` (unit + released engine), and `maida` (runtime engine) groups. Python 3.12–3.14 is supported; earlier interpreters are deprecated and excluded from the tooling lock. Commit `uv.lock` and use locked installs in CI. This is a virtual test project; its tooling version is separate from Action release tags.
 
 After editing dependencies, update and review the shared lock:
 
@@ -30,7 +31,7 @@ Use `uv lock --upgrade-package NAME` for a deliberate upgrade. Update the `maida
 
 ## Tagged release provenance
 
-The release workflow tests the full stable tag, archives its committed source, and publishes `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before publication. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
+The release workflow tests the full stable or release-candidate tag, archives its committed source, and publishes `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before publication. Release candidates use the same checks and provenance as stable releases, with GitHub's prerelease flag and `latest=false`. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
 
 To verify an archive, set its reviewed tag and commit, then run in an empty directory:
 

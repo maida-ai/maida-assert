@@ -190,7 +190,7 @@ jobs:
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
           maida-version: 'v0.5.3'
-          python-version: '3.11'
+          python-version: '3.12'
           mode: report-only
           extra-args: --trials 5 --max-steps 20
 ```

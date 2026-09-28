@@ -2,9 +2,13 @@
 # Package only committed source; callers supply the tag event's immutable SHA.
 set -euo pipefail
 
-if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  echo '::error::Release builds require a lowercase full stable tag (vMAJOR.MINOR.PATCH); moving aliases are not releases.' >&2
+if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(rc(0|[1-9][0-9]*))?$ ]]; then
+  echo '::error::Release builds require vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCHrcN; moving aliases are not releases.' >&2
   exit 2
+fi
+prerelease=false
+if [[ -n "${BASH_REMATCH[4]}" ]]; then
+  prerelease=true
 fi
 if [[ ! "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
   echo '::error::Checkout does not match the release event commit.' >&2
@@ -19,3 +23,6 @@ git archive --format=tar --prefix=maida-assert/ "$GITHUB_SHA" | gzip -n > "$outp
   sha256sum maida-assert.tar.gz > SHA256SUMS
   sha256sum --check SHA256SUMS
 )
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'prerelease=%s\n' "$prerelease" >> "$GITHUB_OUTPUT"
+fi
