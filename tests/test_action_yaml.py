@@ -336,6 +336,17 @@ def test_documentation_uses_maida_ai_package_for_local_install():
     assert "uv add maida\n" not in readme
 
 
+def test_readme_starts_with_released_coding_agent_route_before_workflow_reference():
+    readme = README_PATH.read_text()
+    first_command = readme.split("```bash\n", 1)[1].split("```", 1)[0]
+    selected = _load_action()["inputs"]["maida-version"]["default"].removeprefix("v")
+    assert first_command == f'uv tool install "maida-ai=={selected}"\nmaida demo --regression\n'
+    assert "https://maida.ai/docs/getting-started/" in readme
+    assert "maida-tutorials/blob/main/guides/coding-agent.md" in readme
+    assert readme.index("coding-agent getting started guide") < readme.index("```yaml")
+    assert "not retroactively available in `v5`" in readme
+
+
 def test_documentation_workflows_use_current_action_version():
     readme = _documentation_text()
     assert "maida-ai/maida-assert@v5" in readme

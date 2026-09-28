@@ -4,7 +4,22 @@ Maida runs your traced AI agent in CI, compares its behavior with a baseline and
 
 ## Get started
 
-Instrument your Python agent with `@trace` or `traced_run()`, install its project dependencies in the workflow, and check in `.maida/policy.yaml` and any baseline on the base branch. See the [setup guide](docs/usage.md#usage) for inputs and the [local gate commands](docs/usage.md#running-the-maida-statistical-gate-locally) for creating and reviewing a baseline.
+Start with the released CLI and inspect one failed check before configuring CI:
+
+```bash
+uv tool install "maida-ai==0.5.3"
+maida demo --regression
+```
+
+The offline demo shows a regression verdict and the PR-comment preview without an API key or repository clone. Continue with the [coding-agent getting started guide](https://maida.ai/docs/getting-started/) and its [practical walkthrough](https://github.com/maida-ai/maida-tutorials/blob/main/guides/coding-agent.md): capture one bounded task in your repository, inspect the observation, review a small policy, and reproduce a change locally before adding the gate to a PR. Each step has an observable result; you do not need to read the Action reference first.
+
+For a Python tool-calling agent, follow the [Python setup path](https://github.com/maida-ai/maida/blob/main/docs/python-agent.md). Install Maida into the project environment before importing it; `uv tool install` only installs the standalone CLI.
+
+## Add CI after the local check works
+
+The published Action alias remains `@v5`. The blocking, acceptance-dispatch and first-run recovery features documented for a coordinated revision require a reviewed full Action SHA; they are not retroactively available in `v5`. A local branch is not a release. Before enabling a required gate, complete the [consumer verification](docs/acceptance.md#verify-the-actual-post-accept-loop) for the pinned revision.
+
+For the Python integration, instrument your agent with `@trace` or `traced_run()`, install its project dependencies in the workflow, and check in `.maida/policy.yaml` and any baseline on the base branch. See the [setup reference](docs/usage.md#usage) for inputs and the [local gate commands](docs/usage.md#running-the-maida-statistical-gate-locally) for creating and reviewing a baseline.
 
 Add `.github/workflows/maida-check.yml`:
 
