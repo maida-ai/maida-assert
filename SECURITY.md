@@ -2,42 +2,29 @@
 
 ## Supported versions
 
-Security fixes for the Maida GitHub Action (`maida-ai/maida-assert`) target the latest released Action version. Older versions are not maintained for security fixes; upgrade to the latest release. If your workflow pins the Action to a full commit SHA, update that pin to the reviewed commit containing the fix.
-
-The `maida-version` input selects the Maida engine independently of the Action version. This policy covers the Action; engine vulnerabilities can also be reported to the contact below.
+Security fixes target the latest released Action. Upgrade older versions, including reviewed SHA pins. The `maida-version` input selects the engine separately; engine vulnerabilities may also be reported below.
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities privately to [security@maida.ai](mailto:security@maida.ai). This mailbox is monitored by the maintainer. Please do not disclose vulnerability details in a public issue or pull request before a fix or coordinated disclosure is ready.
+Email [security@maida.ai](mailto:security@maida.ai) privately. Do not post vulnerability details publicly before coordinated disclosure.
 
-Include the following information when available:
-
-- The affected Action version or commit SHA and the selected Maida engine version.
-- A description of the vulnerability, its potential impact, and any required conditions.
-- Minimal reproduction steps or a proof of concept, including relevant workflow configuration.
-- Your preferred contact details for follow-up.
-
-Remove credentials, tokens, private keys, customer data, and sensitive trace content from reports and examples. Use a minimal, sanitized reproduction whenever possible.
+Include the Action SHA/version, engine version, impact, reproduction steps and a contact address. Remove secrets, customer data and sensitive traces from the reproduction.
 
 ## Response and disclosure
 
-We aim to acknowledge reports within five business days. This is a response target, not a guaranteed resolution time. Investigation and remediation time depend on the severity and complexity of the issue.
-
-We will coordinate with the reporter on follow-up information, remediation, and public disclosure. Please allow time for investigation and a fix before publishing details that could put users at risk.
+We aim to acknowledge reports within five business days. Resolution depends on severity and complexity. We coordinate investigation, fixes and disclosure with the reporter.
 
 ## Repository security controls
 
-Repository workflows declare read-only default token permissions and explicit job grants; publishing jobs request only the write scopes they need.
-
-[Dependabot configuration](.github/dependabot.yml) schedules weekly version checks for Python requirements, GitHub Actions workflows, and composite actions. Dependabot alerts and security updates are separate repository settings. Version checks do not replace reviewing dependency alerts. See the [dependency integrity guidance](#dependency-integrity) for the locked installation manifests.
-
-The [CodeQL workflow](.github/workflows/codeql.yml) scans Python and GitHub Actions on pushes and pull requests targeting `main` or `release/**`, weekly, and on manual dispatch. It uses pinned actions and grants `security-events: write` only to the analysis job. Use this workflow as advanced setup; do not also enable CodeQL default setup. Verify successful scans and Dependabot update checks, triage alerts in the repository Security tab, and record results before considering the security baseline complete. These configurations do not themselves prove a successful scan or the absence of vulnerabilities.
+- Workflows use read-only default tokens and explicit job grants. Publishing jobs receive only their required write scopes.
+- [Dependabot](.github/dependabot.yml) checks dependencies and Actions weekly. Enable and review repository alerts separately.
+- [CodeQL](.github/workflows/codeql.yml) scans Python and Actions on PRs/pushes to `main` and `release/**`, weekly and on dispatch. Use advanced setup without also enabling default setup.
+- Verify successful scans and triage alerts; configuration alone is not evidence of a clean scan.
 
 ## Dependency integrity
 
-Third-party Actions are pinned to full commit SHAs in the composite Actions, repository workflows, and examples. Pin `maida-ai/maida-assert` itself to a reviewed full commit SHA in consumer workflows too; the `@v5` and `@main` examples are discovery references and may move.
+Third-party Actions use full SHA pins. Pin this Action to a reviewed SHA too; `@v5` and `@main` are discovery references.
 
-The default Maida version installs from `requirements-maida.lock`, including exact transitive versions and SHA-256 package hashes. Installation requires binary wheels and fails if none match the chosen Python/platform; it never falls back to an unreviewed source build. This locks packages installed by the Action, not arbitrary packages already installed in the consumer environment. Other explicit `maida-version` values preserve the configurable installation path and emit a warning that they bypass the lock. Review those dependencies separately; a Git commit pin alone does not lock transitive Python dependencies.
+Default engine installation uses `requirements-maida.lock`: exact versions, hashes and binary wheels only. Explicit `maida-version` overrides warn that they bypass the lock. The lock does not cover packages already present in the consumer environment.
 
-
-See [dependency maintenance](CONTRIBUTING.md#dependency-maintenance) for lock refreshes and [release provenance](CONTRIBUTING.md#tagged-release-provenance) for archive verification.
+See [dependency maintenance](CONTRIBUTING.md#dependency-maintenance) and [release verification](CONTRIBUTING.md#tagged-release-provenance).

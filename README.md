@@ -35,7 +35,7 @@ jobs:
           baseline: baselines/my_agent.json
 ```
 
-Examples use the published `@v5` reference. Blocking-mode and acceptance features in the detailed guide require a reviewed coordinated Action revision. Pin a full commit SHA in production and follow the [required repository settings](docs/usage.md#blocking-mode-and-required-repository-settings) before using Maida as a merge gate. FAIL, gating INCONCLUSIVE, configuration changes without acceptance, and setup/publication errors block a job in blocking mode; report-only mode is available for observation.
+Examples use `@v5`; newer blocking and acceptance features require a coordinated Action revision. Pin a reviewed SHA and follow the [required repository settings](docs/usage.md#blocking-mode-and-required-repository-settings). Blocking mode refuses FAIL, INCONCLUSIVE, unaccepted configuration changes and setup/publication errors; report-only mode is observational.
 
 ## More information
 
