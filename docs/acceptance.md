@@ -147,12 +147,29 @@ jobs:
 
 The dispatch payload includes `pr_number`, `ref`, `sha` and `baseline`. `pr-context` verifies `github.event.client_payload.pr_number` and `github.event.client_payload.sha` against the current open, same-repository PR before checkout. Paths come from the trusted workflow.
 
-GitHub runs dispatch workflows at the default-branch SHA. Require **Maida / agent-check** (the explicit commit status) and **Maida statistical gate** for this combined listener. Both publish against the verified PR head. Retain the [workflow/review protections](usage.md#blocking-mode-and-required-repository-settings).
+GitHub runs dispatch workflows at the default-branch SHA. For this combined listener, require **Maida / agent-check** (the explicit commit status) with branches up to date. The publisher requires a validated verdict and successful named-check publication before setting that status to success. The named **Maida statistical gate** check remains evidence on the verified PR head; do not also require it or the workflow job `agent-check` for this route. After a bot acceptance commit, GitHub can associate the named check with the suppressed pull-request workflow suite and leave that requirement expected despite a successful check. Retain unrelated required checks and the [workflow/review protections](usage.md#blocking-mode-and-required-repository-settings).
 
 - Validated PASS, accepted configuration and successful check publication permit a success status.
 - INCONCLUSIVE gets failure; incomplete evaluation or publication gets error.
 - Status publication failure fails the job. Old-head results never authorize new commits.
 
 If the baseline write succeeds but dispatch fails, request acceptance again on the latest head. An unchanged artifact creates no duplicate commit and still requests evaluation. Acceptance alone never means PASS.
+
+## Verify the actual post-accept loop
+
+A successful dispatch API call is only a request. Before advertising this as a working onboarding route, exercise the listener in a disposable consumer repository with the listener already on its default branch and the explicit **Maida / agent-check** status required with strict up-to-date protection. Use an intentional baseline-only change on a same-repository PR, review the trace and request acceptance. Record the acceptance workflow run, the new baseline commit and the resulting **repository_dispatch** run. A scheduled or manually dispatched smoke run does not exercise this loop.
+
+From a checkout of this Action, with `gh` authenticated for read access to the consumer and its branch-protection settings, verify the recorded IDs:
+
+```bash
+uv run --locked python scripts/verify_acceptance_dispatch.py \
+  --repository OWNER/CONSUMER --pr-number PR_NUMBER \
+  --acceptance-run ACCEPT_RUN_ID --gate-run DISPATCH_RUN_ID \
+  --head-sha FULL_NEW_PR_HEAD_SHA --baseline baselines/my_agent.json
+```
+
+This command makes GET requests only. It verifies the baseline-only commit and acceptance provenance, the named check's exact baseline digest and trusted policy base, the latest required status, the updated sticky report, and strict required-status settings. It rejects the named check or workflow job as additional Maida requirements for this dispatch route. It binds evidence to the dispatch attempt's start time; a stale green run or default-branch check cannot substitute for the new PR head. It checks the PR again after reading evidence and fails if the head or base moved. `--verdict fail` and `--verdict inconclusive` verify negative outcomes without treating them as approvals. Missing evidence or unavailable protection settings fails verification, including repositories whose protection is configured only through a ruleset that this script cannot inspect.
+
+Retain the returned IDs and hashes with the consumer exercise. The output deliberately says `merge_attempt_verified: false`: reading configured protection cannot prove GitHub actually refused a merge. Complete the live merge/refusal exercises in [CONTRIBUTING.md](../CONTRIBUTING.md#live-consumer-verification), including a later head invalidating the accepted configuration, and record those results separately. Local E2E tests cover the real CLI and composite scripts against a local GitHub fixture; they do not replace this live exercise.
 
 Failed behavioral checks publish the Markdown report and exit 1. Missing evidence and internal errors stop immediately. See the [CLI reference](https://github.com/maida-ai/maida/blob/main/docs/cli.md) for exit codes and the [getting started guide](https://github.com/maida-ai/maida/blob/main/docs/getting-started.md) for tracing and setup.

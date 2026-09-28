@@ -97,7 +97,7 @@ Blocking mode requires a clean checkout of the exact PR head, the base commit lo
 
 Configure the repository:
 
-- Require both `agent-check` and **Maida statistical gate**, with branches up to date.
+- For a pull-request-only workflow, require both `agent-check` and **Maida statistical gate**, with branches up to date. If using the combined acceptance/dispatch listener, require its explicit **Maida / agent-check** status instead; follow the [dispatch protection settings](acceptance.md#baseline-write-back-engine). Keep unrelated required checks.
 - Require fresh reviews after new commits and code-owner review of workflows, harness dependencies, policies, baselines and CODEOWNERS.
 - Keep the gate unconditional: no path filters, `continue-on-error` or bypasses.
 

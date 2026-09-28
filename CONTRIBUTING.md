@@ -75,3 +75,5 @@ Local fixtures do not prove GitHub enforcement. Before claiming it, use a dispos
 - Configuration acceptance applies only to its exact commit and digest.
 - New commits, stale results and publication failures cannot authorize merging.
 - Workflow-file protection and required reviews work.
+
+Use the [read-only post-accept verifier](docs/acceptance.md#verify-the-actual-post-accept-loop) to bind the acceptance, dispatch, accepted baseline, current-head check/status and sticky report. A success result establishes that observed loop and configured required checks; it does not establish merge refusal. Keep the fixture results, this evidence and actual merge/refusal results distinct in release sign-off.
