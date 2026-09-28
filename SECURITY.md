@@ -2,17 +2,17 @@
 
 ## Supported versions
 
-Security fixes target the latest released Action. Upgrade older versions, including reviewed SHA pins. The `maida-version` input selects the engine separately; engine vulnerabilities may also be reported below.
+Security fixes target the latest released Action. Upgrade older versions, including reviewed SHA pins. Reports about older versions are welcome; reproduce on the latest release when possible. The `maida-version` input selects the engine separately; include both versions when reporting an issue that crosses the Action/engine boundary.
 
 ## Reporting a vulnerability
 
 Email [security@maida.ai](mailto:security@maida.ai) privately. Do not post vulnerability details publicly before coordinated disclosure.
 
-Include the Action SHA/version, engine version, impact, reproduction steps and a contact address. Remove secrets, customer data and sensitive traces from the reproduction.
+Include the Action SHA/version, engine version, runner environment, impact, reproduction steps and a contact address. Remove secrets, customer data and sensitive traces from the reproduction. Use simulated data where possible; do not send credentials or an unredacted workflow log.
 
 ## Response and disclosure
 
-We aim to acknowledge reports within five business days. Resolution depends on severity and complexity. We coordinate investigation, fixes and disclosure with the reporter.
+We aim to acknowledge reports within five business days. This is an acknowledgement target, not a guaranteed fix deadline. Resolution depends on severity and complexity. We coordinate investigation, fixes and disclosure with the reporter, and communicate the next steps after initial triage.
 
 ## Repository security controls
 
@@ -20,6 +20,10 @@ We aim to acknowledge reports within five business days. Resolution depends on s
 - [Dependabot](.github/dependabot.yml) checks dependencies and Actions weekly. Enable and review repository alerts separately.
 - [CodeQL](.github/workflows/codeql.yml) scans Python and Actions on PRs/pushes to `main` and `release/**`, weekly and on dispatch. Use advanced setup without also enabling default setup.
 - Verify successful scans and triage alerts; configuration alone is not evidence of a clean scan.
+
+## Runner data
+
+The Action copies trusted policy and baseline files into temporary runner storage for evaluation. Temporary storage is not a guarantee that its contents are non-sensitive. Keep secrets out of checked-in configuration and baselines, restrict access to the runner, and review any artifact upload that includes these files. Include the runner's access and retention conditions when reporting a possible exposure; use a redacted reproduction.
 
 ## Dependency integrity
 
