@@ -225,7 +225,7 @@ wheels = [
 
 [[package]]
 name = "maida-ai"
-version = "0.5.3"
+version = "0.5.3.post1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -237,9 +237,9 @@ dependencies = [
     { name = "typer" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/09/1325feac650bb43a15ef0a02d6f020811f98e346dba1c0ea6ea94e3937fc/maida_ai-0.5.3.tar.gz", hash = "sha256:fd055beb4771c2a161fda6fb8fd29cc80062ac7aa3b6535a84bebde99ee379ed", size = 995883, upload-time = "2026-09-11T01:05:04.695Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/33/cecaeb4224c04fe178cfb0881136c25ecf482099de901fe62d91bad31f8b/maida_ai-0.5.3.post1.tar.gz", hash = "sha256:e7c320592ad75708fb72358afff7bd61a285813d0a5a327e8e95da9e54dc7ad1", size = 1001935, upload-time = "2026-09-11T17:49:24.258Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/82/9059771a83a492c5ba84322d8c0a6f357342b7ec86026d93ace9f40a780b/maida_ai-0.5.3-py3-none-any.whl", hash = "sha256:f2b1bc9bf2d571a29ec66da1250a40c1cc1e3a4e3a1d8a887fedb125069be4f6", size = 202299, upload-time = "2026-09-11T01:05:02.899Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/09/6e8ddaa3c07fafe362393d8a3d939e9221a8a7deb44813f79a6fbdf3b127/maida_ai-0.5.3.post1-py3-none-any.whl", hash = "sha256:53a295410c215e553bf42349118be40c473a4ddcf8ba498791deae7c157fd10e", size = 202209, upload-time = "2026-09-11T17:49:22.779Z" },
 ]
 
 [[package]]
@@ -272,12 +272,12 @@ dev = [
     { name = "pyyaml", marker = "python_full_version >= '3.12'", specifier = ">=6.0.3" },
 ]
 e2e = [
-    { name = "maida-ai", marker = "python_full_version >= '3.12'", specifier = "==0.5.3" },
+    { name = "maida-ai", marker = "python_full_version >= '3.12'", specifier = "==0.5.3.post1" },
     { name = "pytest", marker = "python_full_version >= '3.12'", specifier = ">=9.1.1" },
     { name = "pytest-xdist", marker = "python_full_version >= '3.12'", specifier = ">=3.8.0" },
     { name = "pyyaml", marker = "python_full_version >= '3.12'", specifier = ">=6.0.3" },
 ]
-maida = [{ name = "maida-ai", specifier = "==0.5.3" }]
+maida = [{ name = "maida-ai", specifier = "==0.5.3.post1" }]
 
 [[package]]
 name = "markdown-it-py"
