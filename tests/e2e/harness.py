@@ -7,6 +7,7 @@ All Git mutations are confined to disposable local repositories.
 
 import base64
 import copy
+from contextlib import chdir
 import json
 import os
 import re
@@ -660,12 +661,46 @@ class Workflow:
         self.consumer = consumer
         source = Path(os.environ.get("MAIDA_E2E_SCAFFOLD_PATH", ROOT.parent / "maida/maida/scaffold.py"))
         scaffold = runpy.run_path(str(source))
+        self.has_parameterized_generator = "render_workflow" in scaffold
         generated = consumer.root.parent / "generated-maida.yml"
-        scaffold["write_scaffold"](generated, scaffold["WORKFLOW_TEMPLATE"], force=True)
+        if self.has_parameterized_generator:
+            # Render real consumer paths and dependency metadata, just as init does.
+            with chdir(consumer.root):
+                content = scaffold["render_workflow"]("agent.py", "baseline.json")
+            generated.write_text(content, encoding="utf-8")
+        else:
+            # The reviewed generator pinned in CI predates parameterized init.
+            scaffold["write_scaffold"](generated, scaffold["WORKFLOW_TEMPLATE"], force=True)
         self.workflow = yaml.safe_load(generated.read_text())
+        self.generated_environment = self.workflow["env"] if self.has_parameterized_generator else {
+            "MAIDA_AGENT_SCRIPT": "agent.py", "MAIDA_POLICY": "policy.yaml", "MAIDA_BASELINE": "baseline.json",
+        }
+        # Fixture policy lives at a non-default path; entrypoint and baseline come
+        # from the actual generated environment rather than test overrides.
+        self.generated_environment["MAIDA_POLICY"] = "policy.yaml"
         self.event_name, self.event = event_name, event
         self.acceptance_value = acceptance_value
         self.jobs, self.artifacts = {}, {}
+
+    @staticmethod
+    def isolate_project_python(consumer):
+        """Execute dependency setup without installing into the shared test venv."""
+        original_packages = consumer.run(
+            "python", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"
+        ).stdout.strip()
+        environment = consumer.root.parent / "python"
+        consumer.run("python", "-m", "venv", "--without-pip", str(environment))
+        python = environment / "bin/python"
+        packages = consumer.run(
+            str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"
+        ).stdout.strip()
+        # Share the already locked Maida installation, while all consumer
+        # dependencies go into this disposable runner's own interpreter.
+        Path(packages, "maida-e2e.pth").write_text(original_packages + "\n")
+        entrypoint = environment / "bin/maida"
+        entrypoint.write_text(f"#!{python}\nfrom maida.cli import main\nmain()\n")
+        entrypoint.chmod(0o755)
+        consumer.env["PATH"] = f"{environment / 'bin'}{os.pathsep}{consumer.env['PATH']}"
 
     def run(self):
         triggers = self.workflow.get("on", self.workflow.get(True))
@@ -684,12 +719,14 @@ class Workflow:
                      "GITHUB_SHA": self.consumer.base if self.event_name == "repository_dispatch" else self.consumer.api.head}
             if name == "capture":
                 c.env.pop("GITHUB_TOKEN", None)
+            if any(step.get("name") == "Install project dependencies" for step in definition["steps"]):
+                self.isolate_project_python(c)
             job = Composite(c, "action.yml", event=self.event, event_name=self.event_name)
             job.action = {"runs": {"steps": definition["steps"]}}
             job.children, job.artifacts = {}, self.artifacts
             job.context.update({
-                "env.MAIDA_AGENT_SCRIPT": "agent.py", "env.MAIDA_POLICY": "policy.yaml",
-                "env.MAIDA_BASELINE": "baseline.json", "vars.MAIDA_CONFIGURATION_ACCEPTANCE": self.acceptance_value,
+                **{f"env.{key}": value for key, value in self.generated_environment.items()},
+                "vars.MAIDA_CONFIGURATION_ACCEPTANCE": self.acceptance_value,
                 "runner.temp": str(c.root.parent), "github.run_attempt": "1",
                 "github.event.issue.pull_request": self.event.get("issue", {}).get("pull_request", {}),
                 "github.event.comment.body": self.event.get("comment", {}).get("body", ""),

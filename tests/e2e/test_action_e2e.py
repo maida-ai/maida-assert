@@ -2,6 +2,7 @@
 
 import json
 import re
+import zipfile
 from hashlib import sha256
 from pathlib import Path
 
@@ -241,6 +242,43 @@ def test_generated_acceptance_dispatch_failure_reports_written_head_and_retries(
     assert retry.jobs["write"]["result"] == "success", retry.jobs["write"]["runner"].logs
     assert consumer.api.head == written
     assert consumer.api.dispatches[-1]["client_payload"]["sha"] == written
+
+
+def test_generated_dependency_setup_runs_in_gate_and_acceptance_capture(consumer):
+    # A local wheel makes the agent genuinely depend on installation without
+    # requiring a package index, a build backend, or an external service.
+    wheels = consumer.root / "dependencies"
+    wheels.mkdir()
+    wheel = wheels / "onboarding_fixture-0.0.1-py3-none-any.whl"
+    info = "onboarding_fixture-0.0.1.dist-info"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("onboarding_fixture/__init__.py", "READY = True\n")
+        archive.writestr(f"{info}/METADATA", "Metadata-Version: 2.3\nName: onboarding-fixture\nVersion: 0.0.1\n")
+        archive.writestr(f"{info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
+        archive.writestr(f"{info}/RECORD", "")
+    (consumer.root / "requirements.txt").write_text(f"./dependencies/{wheel.name}\n")
+    agent = consumer.root / "agent.py"
+    # Keep the module docstring and future import valid while adding a real dependency.
+    agent.write_text(agent.read_text().replace("from maida", "import onboarding_fixture\nassert onboarding_fixture.READY\n\nfrom maida", 1))
+    consumer.env["UV_OFFLINE"] = "true"
+    consumer.run("git", "add", "dependencies", "requirements.txt", "agent.py")
+    consumer.run("git", "commit", "-m", "Consumer requires a project package")
+    consumer.run("git", "push", "origin", "candidate")
+    consumer.update_head()
+    consumer.base = consumer.api.head
+    workflow = Workflow(consumer, "pull_request", pr_event(consumer))
+    if not workflow.has_parameterized_generator:
+        pytest.skip("The separately pinned legacy generator has no dependency setup")
+    result = workflow.run().jobs["agent-check"]["runner"]
+    assert not result.failed, result.logs
+    assert "Install project dependencies" in result.executed
+    consumer.regress()
+    accepted = Workflow(consumer, "issue_comment", comment_event()).run()
+    capture = accepted.jobs["capture"]["runner"]
+    assert not capture.failed, capture.logs
+    assert "Install project dependencies" in capture.executed
+    assert accepted.jobs["write"]["result"] == "success"
+    assert all("Install project dependencies" not in accepted.jobs[job]["runner"].executed for job in ("authorize", "write"))
 
 
 def test_trace_command_ingests_one_completed_run(consumer):
