@@ -18,7 +18,9 @@ def _load_action():
 
 
 def _documentation_text():
-    return README_PATH.read_text() + "\n" + (REPO_ROOT / "docs/acceptance.md").read_text()
+    return "\n".join(path.read_text() for path in (
+        README_PATH, REPO_ROOT / "docs/usage.md", REPO_ROOT / "docs/acceptance.md",
+    ))
 
 
 def _documentation_yaml_blocks():
