@@ -28,9 +28,8 @@ jobs:
           enable-cache: 'false'
       - name: Test release source
         run: |
-          uv venv --python 3.12
-          uv pip sync --require-hashes --only-binary=:all: requirements-dev.lock
-          .venv/bin/python -m pytest -q --ignore=tests/e2e
+          uv sync --locked --only-group dev --no-build --python "3.12"
+          uv run --locked --no-sync python -m pytest -q --ignore=tests/e2e
 
   release:
     needs: test

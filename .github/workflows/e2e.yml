@@ -48,15 +48,13 @@ jobs:
           node-version: '24'
       - name: Install locked E2E dependencies
         run: |
-          uv venv --python 3.12
-          uv pip sync --require-hashes --only-binary=:all: requirements-e2e.lock
+          uv sync --locked --only-group e2e --no-build --python "3.12"
       - name: Exercise verdicts, comments, and acceptance
         env:
           MAIDA_E2E_STICKY_PATH: ${{ github.workspace }}/.e2e-deps/sticky-comment
           MAIDA_E2E_SCAFFOLD_PATH: ${{ github.workspace }}/.e2e-deps/maida/maida/scaffold.py
         run: |
-          source .venv/bin/activate
-          python -m pytest -q tests/e2e --basetemp=${{ runner.temp }}/maida-e2e \
+          uv run --locked --no-sync python -m pytest -q tests/e2e --basetemp=${{ runner.temp }}/maida-e2e \
           --junitxml=${{ runner.temp }}/maida-e2e-results.xml
       - name: Retain fixture reports and API transcript
         if: always()

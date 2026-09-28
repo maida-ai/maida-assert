@@ -70,8 +70,8 @@ def test_ci_runs_contract_tests_for_action_and_documentation_changes():
     assert "- CONTRIBUTING.md" in workflow
     assert "- SECURITY.md" in workflow
     assert "- action.yml" in workflow
-    assert "- requirements-*.txt" in workflow
-    assert "- requirements-*.lock" in workflow
+    assert "- pyproject.toml" in workflow
+    assert "- uv.lock" in workflow
     assert "- tests/**" in workflow
     assert "pytest -q" in workflow
 
@@ -315,8 +315,10 @@ def test_pypi_install_uses_maida_ai_package():
     steps = _load_action()["runs"]["steps"]
     install_step = next(step for step in steps if step.get("name") == "Install Maida")
     script = install_step["run"]
-    assert "maida-ai==${MAIDA_VERSION:1}" in script
-    assert "maida==${MAIDA_VERSION:1}" not in script
+    assert "install_maida.sh" in script
+    installer = (REPO_ROOT / "scripts/install_maida.sh").read_text()
+    assert "maida-ai==${MAIDA_VERSION:1}" in installer
+    assert "maida==${MAIDA_VERSION:1}" not in installer
 
 
 def test_maida_version_description_documents_run_command_coupling():

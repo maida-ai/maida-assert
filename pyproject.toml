@@ -1,0 +1,31 @@
+[project]
+name = "maida-assert-tests"
+# Virtual tooling project; Action release versions remain Git tags.
+version = "0"
+requires-python = ">=3.10,<3.15"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
+    "pyyaml>=6.0.3",
+]
+maida = [
+    "maida-ai==0.5.3",
+]
+e2e = [
+    { include-group = "dev" },
+    { include-group = "maida" },
+]
+
+[tool.uv]
+package = false
+required-version = ">=0.12.17,<0.13"
+default-groups = ["dev"]
+
+[tool.uv.dependency-groups]
+dev = { requires-python = ">=3.12" }
+e2e = { requires-python = ">=3.12" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

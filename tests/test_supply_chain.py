@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+import tomllib
 
 import yaml
 
@@ -32,15 +33,14 @@ def test_capture_uv_version_and_cache_settings_survive_yaml_parsing():
     assert uv["with"] == {"version": "0.12.17", "enable-cache": "false"}
 
 
-def test_dependency_locks_pin_versions_and_hashes():
-    for name in ("dev", "e2e"):
-        lock = (ROOT / f"requirements-{name}.lock").read_text()
-        requirements = [line for line in lock.replace("\\\n", " ").splitlines()
-                        if line and not line.startswith(("#", " "))]
-        assert requirements
-        for requirement in requirements:
-            assert re.match(r"[\w.-]+==[^\s]+", requirement)
-            assert "--hash=sha256:" in requirement
+def test_uv_lock_pins_registry_packages_and_hashes():
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    registry = [p for p in lock["package"] if "registry" in p["source"]]
+    assert registry
+    for package in registry:
+        assert package["version"]
+        assert package["wheels"], package["name"]
+        assert all(w["hash"].startswith("sha256:") for w in package["wheels"])
 
 
 def test_e2e_generator_checkout_is_immutable():
@@ -50,19 +50,27 @@ def test_e2e_generator_checkout_is_immutable():
     assert re.fullmatch(r"[0-9a-f]{40}", checkout["with"]["ref"])
 
 
-def test_dependency_locks_include_declared_requirements():
-    def declared_names(path):
-        names = set()
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("-r "):
-                names.update(declared_names(path.parent / line[3:].strip()))
-            else:
-                names.add(re.match(r"[\w.-]+", line)[0].lower().replace("_", "-"))
-        return names
+def test_uv_groups_share_the_reviewed_engine_version():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    groups = project["dependency-groups"]
+    assert {"dev", "maida", "e2e"} <= groups.keys()
+    assert groups["e2e"] == [{"include-group": "dev"}, {"include-group": "maida"}]
+    requirement, = groups["maida"]
+    version = requirement.removeprefix("maida-ai==")
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    engine, = [p for p in lock["package"] if p["name"] == "maida-ai"]
+    assert engine["version"] == version
+    for path in (ROOT / "action.yml", ROOT / "capture-acceptance/action.yml"):
+        action = yaml.safe_load(path.read_text())
+        assert action["inputs"]["maida-version"]["default"] == "v" + version
 
-    for name in ("dev", "e2e"):
-        locked = set(re.findall(r"^([\w.-]+)==", (ROOT / f"requirements-{name}.lock").read_text(), re.M))
-        assert declared_names(ROOT / f"requirements-{name}.txt") <= locked
+
+def test_workflows_use_locked_uv_groups():
+    for name, job, group in (("ci.yml", "unit-tests", "dev"),
+                              ("release.yml", "test", "dev"),
+                              ("e2e.yml", "deterministic-e2e", "e2e")):
+        workflow = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
+        commands = "\n".join(s.get("run", "") for s in workflow["jobs"][job]["steps"])
+        assert f"uv sync --locked --only-group {group} --no-build" in commands
+        assert "uv run --locked" in commands
+        assert "requirements-" not in commands

@@ -37,8 +37,8 @@ def test_dependabot_covers_python_and_all_composite_actions():
     config = load_yaml(ROOT / ".github/dependabot.yml")
     assert config["version"] == "2"
     updates = {item["package-ecosystem"]: item for item in config["updates"]}
-    assert set(updates) == {"pip", "github-actions"}
-    assert updates["pip"]["directory"] == "/"
+    assert set(updates) == {"uv", "github-actions"}
+    assert updates["uv"]["directory"] == "/"
     action_dirs = {"/"} | {
         "/" + path.parent.name for path in ROOT.glob("*/action.yml")
     }

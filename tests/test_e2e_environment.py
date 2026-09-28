@@ -17,6 +17,14 @@ def test_e2e_workflow_activates_environment_for_child_commands(tmp_path):
                if s.get("name") == "Exercise verdicts, comments, and acceptance")
     venv = tmp_path / ".venv"
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "fixture"\nversion = "0"\n'
+        '[tool.uv]\npackage = false\n'
+    )
+    subprocess.run(
+        ["uv", "lock", "--project", str(tmp_path), "--offline", "--python", sys.executable],
+        check=True,
+    )
     # This pytest stand-in probes the subprocess lookup used by the E2E harness.
     (tmp_path / "pytest.py").write_text(
         "import subprocess, sys\n"
@@ -38,7 +46,8 @@ def test_e2e_workflow_activates_environment_for_child_commands(tmp_path):
         ["bash", "-eo", "pipefail", "-c",
          run.replace("${{ runner.temp }}", str(tmp_path))],
         cwd=tmp_path,
-        env={**os.environ, "PATH": f"{runner_bin}:{os.environ['PATH']}"},
+        env={**os.environ, "PATH": f"{runner_bin}:{os.environ['PATH']}",
+             "UV_PROJECT_ENVIRONMENT": str(venv)},
         text=True, capture_output=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
