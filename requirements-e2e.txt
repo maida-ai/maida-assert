@@ -1,2 +1,0 @@
--r requirements-dev.txt
-maida-ai==0.5.3

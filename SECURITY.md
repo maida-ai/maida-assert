@@ -25,6 +25,6 @@ We aim to acknowledge reports within five business days. Resolution depends on s
 
 Third-party Actions use full SHA pins. Pin this Action to a reviewed SHA too; `@v5` and `@main` are discovery references.
 
-Default engine installation uses `requirements-maida.lock`: exact versions, hashes and binary wheels only. Explicit `maida-version` overrides warn that they bypass the lock. The lock does not cover packages already present in the consumer environment.
+Default engine installation exports the `maida` group from `uv.lock` offline, then installs exact versions with hashes and binary wheels only. A stale lock stops installation. Explicit `maida-version` overrides warn that they bypass the lock. The lock does not cover packages already present in the consumer environment.
 
 See [dependency maintenance](CONTRIBUTING.md#dependency-maintenance) and [release verification](CONTRIBUTING.md#tagged-release-provenance).

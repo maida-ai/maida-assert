@@ -33,17 +33,8 @@ runs:
       env:
         MAIDA_VERSION: '${{ inputs.maida-version }}'
       run: |
-        if [[ ! "$MAIDA_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.]+)?$ ]]; then
-          echo 'Use a released Maida version, vVERSION.'
-          exit 2
-        fi
-        LOCKED_VERSION="$(sed -n 's/^maida-ai==/v/p' "$GITHUB_ACTION_PATH/../requirements-maida.txt")"
-        if [[ "$MAIDA_VERSION" == "$LOCKED_VERSION" ]]; then
-          uv pip install --system --require-hashes --only-binary=:all: -r "$GITHUB_ACTION_PATH/../requirements-maida.lock"
-        else
-          echo '::warning::Custom maida-version bypasses the reviewed dependency lock; review and pin this dependency separately.'
-          uv pip install --system "maida-ai==${MAIDA_VERSION:1}"
-        fi
+        MAIDA_ACTION_ROOT="$GITHUB_ACTION_PATH/.." MAIDA_ALLOW_GIT=false \
+          bash "$GITHUB_ACTION_PATH/../scripts/install_maida.sh"
     - name: Produce completed run
       shell: bash
       env:

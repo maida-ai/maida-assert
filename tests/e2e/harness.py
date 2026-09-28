@@ -496,7 +496,7 @@ class Composite:
             }
             if "run" in step:
                 if step.get("name") == "Install Maida":
-                    # Installed once from requirements-e2e.txt before testing.
+                    # Installed once from the locked e2e group before testing.
                     version = c.run(
                         "python",
                         "-c",

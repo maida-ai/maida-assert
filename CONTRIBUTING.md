@@ -16,15 +16,17 @@ Legacy tags remain on their original commits: `v1` → `v0.1.0`, `v2` → `v0.2.
 
 ## Dependency maintenance
 
-Review the requirement inputs, regenerate their locks with the pinned `uv` version, and inspect the version/hash diff:
+`pyproject.toml` declares the `dev` (unit), `e2e` (unit + released engine), and `maida` (runtime engine) groups. Commit `uv.lock` and use locked installs in CI. This is a virtual test project; its tooling version is separate from Action release tags.
+
+After editing dependencies, update and review the shared lock:
 
 ```bash
-uv pip compile --universal --python-version 3.10 --generate-hashes requirements-dev.txt -o requirements-dev.lock
-uv pip compile --universal --python-version 3.10 --generate-hashes requirements-maida.txt -o requirements-maida.lock
-uv pip compile --universal --python-version 3.10 --generate-hashes requirements-e2e.txt -o requirements-e2e.lock
+uv lock
+uv sync --locked --only-group dev --no-build
+uv run --locked --no-sync pytest -q --ignore=tests/e2e
 ```
 
-Run the tests before committing. Use `--upgrade` only for a deliberate refresh. Update the default CLI version and lock input together; review the E2E generator SHA separately.
+Use `uv lock --upgrade-package NAME` for a deliberate upgrade. Update the `maida` group and both Action engine defaults together; review the E2E generator SHA separately.
 
 ## Tagged release provenance
 
@@ -55,10 +57,9 @@ git init /tmp/maida-sticky-comment
 git -C /tmp/maida-sticky-comment remote add origin https://github.com/marocchino/sticky-pull-request-comment.git
 git -C /tmp/maida-sticky-comment fetch --depth 1 origin 0ea0beb66eb9baf113663a64ec522f60e49231c0
 git -C /tmp/maida-sticky-comment checkout --detach FETCH_HEAD
-uv venv --python 3.12 /tmp/maida-action-tests
-uv pip sync --python /tmp/maida-action-tests/bin/python --require-hashes --only-binary=:all: requirements-e2e.lock
-uv run --python /tmp/maida-action-tests/bin/python --no-project pytest -q --ignore=tests/e2e
-MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida/maida/scaffold.py uv run --python /tmp/maida-action-tests/bin/python --no-project pytest -q tests/e2e
+uv sync --locked --only-group e2e --no-build --python 3.12
+uv run --locked --no-sync pytest -q --ignore=tests/e2e
+MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida/maida/scaffold.py uv run --locked --no-sync pytest -q tests/e2e
 ```
 
 The local tests exercise verdicts, PR comments, trusted base policy, acceptance and dispatch using a temporary consumer repo and loopback GitHub fixtures. Agents are simulated; no model or external API calls occur after setup. Review `consumer/comment.actual.md` before updating report snapshots.

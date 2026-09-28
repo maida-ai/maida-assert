@@ -17,9 +17,8 @@ on:
       - pr-context/**
       - publish-status/**
       - examples/**
-      - requirements-dev.txt
-      - requirements-*.txt
-      - requirements-*.lock
+      - pyproject.toml
+      - uv.lock
       - scripts/**
       - tests/**
       - write-back/**
@@ -63,10 +62,10 @@ jobs:
           enable-cache: 'false'
       - name: Install dev dependencies
         run: |
-          uv pip install --system --require-hashes --only-binary=:all: -r requirements-dev.lock
+          uv sync --locked --only-group dev --no-build --python "${{ matrix.python-version }}"
 
       - name: Run tests
-        run: pytest -q --ignore=tests/e2e
+        run: uv run --locked --no-sync pytest -q --ignore=tests/e2e
 
   integration:
     runs-on: ubuntu-latest
