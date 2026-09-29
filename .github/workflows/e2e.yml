@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: maida-ai/maida
-          ref: d02975ddf7e7ca54de9a9d94057aba4ffd401af5 # core v0.6.0 generator
+          ref: a45f6d4cf6c71c62b0a115a67302531978a08040 # core v0.6.0 generator
           path: .e2e-deps/maida
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

@@ -59,7 +59,8 @@ def test_action_and_documentation_match_python_owned_current_main_contract():
 
     assert action["inputs"]["maida-version"]["default"] == contract["engine_ref"]
     assert f'maida {contract["cli"]["primary_gate"]} "$RUN_TARGET"' in gate_step["run"]
-    assert _release_ref() in readme
+    assert contract["action_ref"] == _release_ref()
+    assert contract["action_ref"] in readme
     assert contract["install_requirement"] in readme
     assert f'version: {contract["schemas"]["policy"]}' in readme
     policy_section = readme.split("## Policy example", 1)[1].split(
