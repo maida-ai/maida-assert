@@ -6,7 +6,7 @@
 
 An authorized `/maida accept [optional reason]` comment can create a baseline-only bot commit. Users need write access. Fork pull requests are rejected before any candidate checkout. A bare command records the commenter as the reason.
 
-**Migrate existing handlers:** the former single-job `accept-command` and `write-back` interfaces are retired. Authorization does not make candidate code safe to run with a write token. Use three separate GitHub-hosted jobs as below; these interfaces require an Action revision containing this migration. Replace `@main` with that reviewed full commit SHA before production use.
+**Migrate existing handlers:** the former single-job `accept-command` and `write-back` interfaces are retired. Authorization does not make candidate code safe to run with a write token. Use three separate GitHub-hosted jobs as below, available in Action `v0.6.0`. Replace the example tag with its reviewed full commit SHA before production use.
 
 Add this workflow on the default branch. Set the baseline, policy and agent path to your repository's files. Install any additional agent dependencies only in `capture`, using `uv`; never install candidate dependencies in `authorize` or `write`. The example explicitly uploads the candidate baseline data to a GitHub Actions artifact for one day; it uploads no raw traces or reports. Review what your baseline contains before enabling this opt-in workflow.
 
@@ -34,7 +34,7 @@ jobs:
       head-sha: ${{ steps.command.outputs.head-sha }}
     steps:
       - id: command
-        uses: maida-ai/maida-assert/accept-command@main
+        uses: maida-ai/maida-assert/accept-command@v0.6.0
         with:
           stage: authorize
           baseline: baselines/my_agent.json
@@ -53,7 +53,7 @@ jobs:
         with:
           ref: ${{ needs.authorize.outputs.head-sha }}
           persist-credentials: false
-      - uses: maida-ai/maida-assert/capture-acceptance@main
+      - uses: maida-ai/maida-assert/capture-acceptance@v0.6.0
         with:
           context: ${{ needs.authorize.outputs.context }}
           agent-script: my_agent.py
@@ -78,7 +78,7 @@ jobs:
         with:
           name: maida-accept-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/maida-acceptance
-      - uses: maida-ai/maida-assert/write-back@main
+      - uses: maida-ai/maida-assert/write-back@v0.6.0
         if: always()
         with:
           context: ${{ needs.authorize.outputs.context }}
@@ -101,7 +101,7 @@ The writer supports same-repository pull requests only. Run it in a fresh truste
 
 The bot commit requires [configuration acceptance](usage.md#explicit-configuration-acceptance) and fresh gate results. It emits `maida_baseline_updated` because `GITHUB_TOKEN` pushes do not trigger ordinary PR workflows. Dispatch requests evaluation, not approval. A later head/base invalidates acceptance.
 
-Install the listener on the default branch. The coordinated `maida init --github` scaffold includes it; pin these `@main` sub-actions to a reviewed SHA before production use.
+Install the listener on the default branch. The coordinated `maida init --github` scaffold includes it; pin these `v0.6.0` sub-actions to a reviewed SHA before production use.
 
 ```yaml
 name: Evaluate Accepted Maida Baseline
@@ -122,21 +122,21 @@ jobs:
       statuses: write
     steps:
       - id: pr
-        uses: maida-ai/maida-assert/pr-context@main
+        uses: maida-ai/maida-assert/pr-context@v0.6.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.pr.outputs.head-sha }}
           fetch-depth: 0
           persist-credentials: false
       - id: gate
-        uses: maida-ai/maida-assert@main
+        uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
           configuration-acceptance: ${{ vars.MAIDA_CONFIGURATION_ACCEPTANCE }}
       - if: always() && steps.pr.outcome == 'success'
-        uses: maida-ai/maida-assert/publish-status@main
+        uses: maida-ai/maida-assert/publish-status@v0.6.0
         with:
           head-sha: ${{ steps.pr.outputs.head-sha }}
           base-sha: ${{ steps.pr.outputs.base-sha }}

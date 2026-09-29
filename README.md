@@ -7,7 +7,7 @@ Maida runs your traced AI agent in CI, compares its behavior with a baseline and
 Start with the released CLI and inspect one failed check before configuring CI:
 
 ```bash
-uv tool install "maida-ai==0.5.3"
+uv tool install "maida-ai==0.6.0"
 maida demo --regression
 ```
 
@@ -17,7 +17,7 @@ For a Python tool-calling agent, follow the [Python setup path](https://github.c
 
 ## Add CI after the local check works
 
-The published Action alias remains `@v5`. The blocking, acceptance-dispatch and first-run recovery features documented for a coordinated revision require a reviewed full Action SHA; they are not retroactively available in `v5`. A local branch is not a release. Before enabling a required gate, complete the [consumer verification](docs/acceptance.md#verify-the-actual-post-accept-loop) for the pinned revision.
+Use the full `v0.6.0` Action tag after the release is published. For production workflows, pin its reviewed full commit SHA. Before enabling a required gate, complete the [consumer verification](docs/acceptance.md#verify-the-actual-post-accept-loop) for the pinned revision.
 
 For the Python integration, instrument your agent with `@trace` or `traced_run()`, install its project dependencies in the workflow, and check in `.maida/policy.yaml` and any baseline on the base branch. See the [setup reference](docs/usage.md#usage) for inputs and the [local gate commands](docs/usage.md#running-the-maida-statistical-gate-locally) for creating and reviewing a baseline.
 
@@ -44,13 +44,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
 ```
 
-Examples use `@v5`; newer blocking and acceptance features require a coordinated Action revision. Pin a reviewed SHA and follow the [required repository settings](docs/usage.md#blocking-mode-and-required-repository-settings). Blocking mode refuses FAIL, INCONCLUSIVE, unaccepted configuration changes and setup/publication errors; report-only mode is observational.
+The `v0.6.0` Action includes blocking and acceptance features. Pin a reviewed SHA and follow the [required repository settings](docs/usage.md#blocking-mode-and-required-repository-settings). Blocking mode refuses FAIL, INCONCLUSIVE, unaccepted configuration changes and setup/publication errors; report-only mode is observational.
 
 ## More information
 
@@ -59,6 +59,7 @@ Examples use `@v5`; newer blocking and acceptance features require a coordinated
 - [Policy examples](docs/usage.md#policy-example) and [configuration acceptance](docs/usage.md#explicit-configuration-acceptance)
 - [Accept intentional changes from a PR](docs/acceptance.md#accept-an-intentional-change-from-a-pr) and [baseline write-back](docs/acceptance.md#baseline-write-back-engine)
 - [Dependency integrity](SECURITY.md#dependency-integrity) and [release provenance](CONTRIBUTING.md#tagged-release-provenance)
+- [v0.6.0 release notes](CHANGELOG.md#v060)
 - [Contributor testing instructions](CONTRIBUTING.md#testing-the-action)
 
 ## Security

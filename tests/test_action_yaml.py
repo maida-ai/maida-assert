@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import tomllib
 
 import yaml
 
@@ -15,6 +16,12 @@ CONTRACT_PATH = REPO_ROOT / "tests" / "contracts" / "current-main.json"
 
 def _load_action():
     return yaml.safe_load(ACTION_PATH.read_text())
+
+
+def _release_ref():
+    heading = next(line for line in (REPO_ROOT / "CHANGELOG.md").read_text().splitlines()
+                   if line.startswith("## v"))
+    return f"maida-ai/maida-assert@{heading.removeprefix('## ')}"
 
 
 def _documentation_text():
@@ -50,9 +57,9 @@ def test_action_and_documentation_match_python_owned_current_main_contract():
         step for step in action["runs"]["steps"] if step.get("id") == "gate"
     )
 
-    assert action["inputs"]["maida-version"]["default"].startswith("v0.5")
+    assert action["inputs"]["maida-version"]["default"] == contract["engine_ref"]
     assert f'maida {contract["cli"]["primary_gate"]} "$RUN_TARGET"' in gate_step["run"]
-    assert contract["action_ref"] in readme
+    assert _release_ref() in readme
     assert contract["install_requirement"] in readme
     assert f'version: {contract["schemas"]["policy"]}' in readme
     policy_section = readme.split("## Policy example", 1)[1].split(
@@ -66,6 +73,7 @@ def test_ci_runs_contract_tests_for_action_and_documentation_changes():
     workflow = CI_WORKFLOW_PATH.read_text()
 
     assert "- README.md" in workflow
+    assert "- CHANGELOG.md" in workflow
     assert "- docs/**" in workflow
     assert "- CONTRIBUTING.md" in workflow
     assert "- SECURITY.md" in workflow
@@ -325,13 +333,24 @@ def test_maida_version_description_documents_run_command_coupling():
     description = " ".join(
         _load_action()["inputs"]["maida-version"]["description"].split()
     )
-    assert 'Default is "v0.5' in description
+    default = _load_action()["inputs"]["maida-version"]["default"]
+    assert f'Default is "{default}"' in description
+
+
+def test_release_engine_defaults_and_lock_match():
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text())
+    version = project["dependency-groups"]["maida"][0].split("==", 1)[1]
+    for path in (ACTION_PATH, REPO_ROOT / "capture-acceptance/action.yml"):
+        assert yaml.safe_load(path.read_text())["inputs"]["maida-version"]["default"] == f"v{version}"
+    package = next(package for package in lock["package"] if package["name"] == "maida-ai")
+    assert package["version"] == version
 
 
 def test_documentation_uses_maida_ai_package_for_local_install():
     readme = _documentation_text()
     assert (
-        'uv add "maida-ai>=0.5"' in readme
+        f'uv add "{json.loads(CONTRACT_PATH.read_text())["install_requirement"]}"' in readme
     )
     assert "uv add maida\n" not in readme
 
@@ -344,12 +363,13 @@ def test_readme_starts_with_released_coding_agent_route_before_workflow_referenc
     assert "https://maida.ai/docs/getting-started/" in readme
     assert "maida-tutorials/blob/main/guides/coding-agent.md" in readme
     assert readme.index("coding-agent getting started guide") < readme.index("```yaml")
-    assert "not retroactively available in `v5`" in readme
+    assert _release_ref() in readme
 
 
 def test_documentation_workflows_use_current_action_version():
     readme = _documentation_text()
-    assert "maida-ai/maida-assert@v5" in readme
+    assert _release_ref() in readme
+    assert "maida-ai/maida-assert@v5" not in readme
     assert "maida-ai/maida-assert@V4" not in readme
     assert "maida-ai/maida-assert@V5" not in readme
     assert "maida-ai/maida-assert@v1" not in readme
@@ -469,8 +489,9 @@ def test_documentation_documents_write_back_security_and_dispatch_contract():
     assert "github.event.client_payload.pr_number" in readme
     assert "default-branch SHA" in readme
     assert "explicit commit status" in readme
-    assert "maida-ai/maida-assert/pr-context@main" in readme
-    assert "maida-ai/maida-assert/publish-status@main" in readme
+    release = _release_ref().split("@", 1)[1]
+    assert f"maida-ai/maida-assert/pr-context@{release}" in readme
+    assert f"maida-ai/maida-assert/publish-status@{release}" in readme
 
 
 def test_documentation_documents_authorized_accept_command_workflow():

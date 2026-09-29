@@ -37,19 +37,19 @@ def test_release_archive(tmp_path, case):
     env = {**os.environ, "GITHUB_SHA": commit, "GITHUB_REF": "refs/tags/v1.2.3",
            "GITHUB_OUTPUT": str(outputs)}
     if case == "valid-zero":
-        env["GITHUB_REF"] = "refs/tags/v0.6.0"
+        env["GITHUB_REF"] = "refs/tags/v0.0.0"
     if case in {"valid-rc", "valid-rc-zero"}:
-        env["GITHUB_REF"] = "refs/tags/v0.6.0rc1" if case == "valid-rc" else "refs/tags/v0.6.0rc0"
+        env["GITHUB_REF"] = "refs/tags/v0.0.0rc1" if case == "valid-rc" else "refs/tags/v0.0.0rc0"
     if case == "branch":
         env["GITHUB_REF"] = "refs/heads/main"
     if case == "wrong-commit":
         env["GITHUB_SHA"] = "0" * 40
     rejected_tags = {
-        "major-alias": "v5", "minor-alias": "v0.6", "uppercase": "V4",
-        "leading-zero": "v01.6.0", "metadata": "v0.6.0.post1",
-        "semver-prerelease": "v0.6.0-rc.1", "empty-rc": "v0.6.0rc",
-        "leading-zero-rc": "v0.6.0rc01", "negative-rc": "v0.6.0rc-1",
-        "alpha": "v0.6.0a1", "rc-metadata": "v0.6.0rc1.post1",
+        "major-alias": "v5", "minor-alias": "v0.1", "uppercase": "V4",
+        "leading-zero": "v01.2.3", "metadata": "v0.0.0.post1",
+        "semver-prerelease": "v0.0.0-rc.1", "empty-rc": "v0.0.0rc",
+        "leading-zero-rc": "v0.0.0rc01", "negative-rc": "v0.0.0rc-1",
+        "alpha": "v0.0.0a1", "rc-metadata": "v0.0.0rc1.post1",
     }
     if case in rejected_tags:
         env["GITHUB_REF"] = f"refs/tags/{rejected_tags[case]}"
@@ -117,7 +117,7 @@ def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classifica
         "Path(os.environ['ARGUMENT_LOG']).write_text(json.dumps(sys.argv[1:]))\n"
     )
     gh.chmod(0o755)
-    tag = "v0.6.0rc1" if classification == "true" else "v0.6.0"
+    tag = "v0.0.0rc1" if classification == "true" else "v0.0.0"
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
         cwd=tmp_path, text=True, capture_output=True,

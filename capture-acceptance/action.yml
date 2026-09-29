@@ -15,7 +15,7 @@ inputs:
     required: true
   maida-version:
     description: 'Released Maida version, vVERSION. The default uses hash-locked dependencies; overrides warn and bypass that lock.'
-    default: 'v0.5.3'
+    default: 'v0.6.0'
 runs:
   using: composite
   steps:

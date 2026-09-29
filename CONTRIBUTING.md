@@ -5,8 +5,8 @@
 Follow the [cross-repository compatibility policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility). The Action uses the tested engine’s `MAJOR.MINOR` line and its own `PATCH` number. State the tested engine range in each release; matching numbers alone do not establish compatibility. The `maida-version` input selects the engine independently.
 
 - Full `vMAJOR.MINOR.PATCH` tags are immutable stable releases.
-- Full `vMAJOR.MINOR.PATCHrcN` tags (for example, `v0.6.0rc1`) publish immutable release-candidate artifacts as GitHub prereleases without changing the latest stable release.
-- Before 1.0, advance a minor alias such as `v0.5` only after verifying its release. There is no `v0` alias.
+- Full `vMAJOR.MINOR.PATCHrcN` tags publish immutable release-candidate artifacts as GitHub prereleases without changing the latest stable release.
+- Before 1.0, advance a minor alias such as `v0.6` only after verifying its release. There is no `v0` alias.
 - From 1.0, use moving major aliases. Document migration of the existing legacy `v1` before reusing that name.
 - Alias updates, other prerelease spellings and Python `.postN` tags do not publish release artifacts.
 - Pin a reviewed full commit SHA in production workflows.
