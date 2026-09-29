@@ -31,7 +31,7 @@ Use `uv lock --upgrade-package NAME` for a deliberate upgrade. Update the `maida
 
 ## Tagged release provenance
 
-The release workflow tests the full stable or release-candidate tag, archives its committed source, and publishes `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before publication. Release candidates use the same checks and provenance as stable releases, with GitHub's prerelease flag and `latest=false`. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
+The release workflow tests the full stable or release-candidate tag, archives its committed source, and creates a draft GitHub release containing `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before creating the draft. Both stable and release-candidate tags remain drafts until you review the tag, notes, assets and provenance and manually publish the release; immutable release protection takes effect on publication. Release candidates use the same checks and provenance as stable releases, with GitHub's prerelease flag and `latest=false`. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
 
 To verify an archive, set its reviewed tag and commit, then run in an empty directory:
 

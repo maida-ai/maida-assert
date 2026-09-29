@@ -73,7 +73,7 @@ def test_release_archive(tmp_path, case):
     assert archive.read_bytes() == contents
 
 
-def test_release_attests_and_verifies_before_publishing():
+def test_release_attests_and_verifies_before_creating_draft():
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     assert workflow.get("on", workflow.get(True)) == {"push": {"tags": ["v*.*.*"]}}
     assert workflow["permissions"] == {"contents": "read"}
@@ -86,7 +86,7 @@ def test_release_attests_and_verifies_before_publishing():
     build = next(i for i, s in enumerate(steps) if s.get("id") == "archive")
     attest = next(i for i, s in enumerate(steps) if s.get("id") == "attest")
     verify = next(i for i, s in enumerate(steps) if s.get("name") == "Verify provenance")
-    publish = next(i for i, s in enumerate(steps) if s.get("name") == "Publish release assets")
+    publish = next(i for i, s in enumerate(steps) if s.get("name") == "Create draft release with verified assets")
     assert build < attest < verify < publish
     assert steps[attest]["with"]["subject-path"] == "${{ runner.temp }}/release/maida-assert.tar.gz"
     assert "--source-digest" in steps[verify]["run"]
@@ -98,9 +98,9 @@ def test_release_attests_and_verifies_before_publishing():
 
 
 @pytest.mark.parametrize("classification", ["true", "false", "", "invalid"])
-def test_publish_marks_only_release_candidates_as_prereleases(tmp_path, classification):
+def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classification):
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    step = next(s for s in workflow["jobs"]["release"]["steps"] if s.get("name") == "Publish release assets")
+    step = next(s for s in workflow["jobs"]["release"]["steps"] if s.get("name") == "Create draft release with verified assets")
     release = tmp_path / "release"
     release.mkdir()
     archive = release / "maida-assert.tar.gz"
@@ -134,6 +134,7 @@ def test_publish_marks_only_release_candidates_as_prereleases(tmp_path, classifi
     args = json.loads(arguments.read_text())
     assert args[:3] == ["release", "create", tag]
     assert "--verify-tag" in args
+    assert "--draft" in args
     assert ("--prerelease" in args) is (classification == "true")
     assert ("--latest=false" in args) is (classification == "true")
     assert args[-3:] == ["maida-assert.tar.gz", "SHA256SUMS", "provenance.jsonl"]

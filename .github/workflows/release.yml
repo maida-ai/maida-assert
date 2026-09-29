@@ -60,14 +60,14 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
             --source-digest "$GITHUB_SHA" --source-ref "$GITHUB_REF"
-      - name: Publish release assets
+      - name: Create draft release with verified assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           IS_PRERELEASE: ${{ steps.archive.outputs.prerelease }}
         run: |
-          release_flags=(--verify-tag --generate-notes)
+          release_flags=(--draft --verify-tag --generate-notes)
           case "$IS_PRERELEASE" in
             true) release_flags+=(--prerelease --latest=false) ;;
             false) ;;
