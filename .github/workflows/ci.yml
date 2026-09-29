@@ -8,6 +8,7 @@ on:
       - .github/workflows/**
       - .github/dependabot.yml
       - README.md
+      - CHANGELOG.md
       - CONTRIBUTING.md
       - SECURITY.md
       - docs/**
@@ -92,6 +93,6 @@ jobs:
         with:
           agent-script: examples/ci_dummy_agent.py
           policy: .maida/policy.yaml
-          maida-version: 'v0.5.3'
+          maida-version: 'v0.6.0'
           mode: ${{ github.event_name == 'pull_request' && 'blocking' || 'report-only' }}
           post-comment: 'true'

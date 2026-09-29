@@ -37,19 +37,19 @@ def test_release_archive(tmp_path, case):
     env = {**os.environ, "GITHUB_SHA": commit, "GITHUB_REF": "refs/tags/v1.2.3",
            "GITHUB_OUTPUT": str(outputs)}
     if case == "valid-zero":
-        env["GITHUB_REF"] = "refs/tags/v0.6.0"
+        env["GITHUB_REF"] = "refs/tags/v0.0.0"
     if case in {"valid-rc", "valid-rc-zero"}:
-        env["GITHUB_REF"] = "refs/tags/v0.6.0rc1" if case == "valid-rc" else "refs/tags/v0.6.0rc0"
+        env["GITHUB_REF"] = "refs/tags/v0.0.0rc1" if case == "valid-rc" else "refs/tags/v0.0.0rc0"
     if case == "branch":
         env["GITHUB_REF"] = "refs/heads/main"
     if case == "wrong-commit":
         env["GITHUB_SHA"] = "0" * 40
     rejected_tags = {
-        "major-alias": "v5", "minor-alias": "v0.6", "uppercase": "V4",
-        "leading-zero": "v01.6.0", "metadata": "v0.6.0.post1",
-        "semver-prerelease": "v0.6.0-rc.1", "empty-rc": "v0.6.0rc",
-        "leading-zero-rc": "v0.6.0rc01", "negative-rc": "v0.6.0rc-1",
-        "alpha": "v0.6.0a1", "rc-metadata": "v0.6.0rc1.post1",
+        "major-alias": "v5", "minor-alias": "v0.1", "uppercase": "V4",
+        "leading-zero": "v01.2.3", "metadata": "v0.0.0.post1",
+        "semver-prerelease": "v0.0.0-rc.1", "empty-rc": "v0.0.0rc",
+        "leading-zero-rc": "v0.0.0rc01", "negative-rc": "v0.0.0rc-1",
+        "alpha": "v0.0.0a1", "rc-metadata": "v0.0.0rc1.post1",
     }
     if case in rejected_tags:
         env["GITHUB_REF"] = f"refs/tags/{rejected_tags[case]}"
@@ -97,7 +97,7 @@ def test_release_attests_and_verifies_before_creating_draft():
     assert not any(s.get("continue-on-error") for s in steps)
 
 
-@pytest.mark.parametrize("classification", ["true", "false", "", "invalid"])
+@pytest.mark.parametrize("classification", ["true", "false", "", "invalid", "missing-notes"])
 def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classification):
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     step = next(s for s in workflow["jobs"]["release"]["steps"] if s.get("name") == "Create draft release with verified assets")
@@ -108,6 +108,9 @@ def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classifica
     (release / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  maida-assert.tar.gz\n")
     bundle = tmp_path / "bundle.jsonl"
     bundle.write_text("fixture attestation\n")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## v0.0.0\n\nStable release notes.\n\n## v0.0.0rc1\n\nRC notes.\n"
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     arguments = tmp_path / "arguments.json"
@@ -117,18 +120,25 @@ def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classifica
         "Path(os.environ['ARGUMENT_LOG']).write_text(json.dumps(sys.argv[1:]))\n"
     )
     gh.chmod(0o755)
-    tag = "v0.6.0rc1" if classification == "true" else "v0.6.0"
+    tag = {
+        "true": "v0.0.0rc1",
+        "missing-notes": "v9.9.9",
+    }.get(classification, "v0.0.0")
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
         cwd=tmp_path, text=True, capture_output=True,
         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
              "ARGUMENT_LOG": str(arguments), "RUNNER_TEMP": str(tmp_path),
+             "GITHUB_WORKSPACE": str(tmp_path),
              "ATTESTATION_BUNDLE": str(bundle), "GITHUB_REF_NAME": tag,
-             "GITHUB_REPOSITORY": "fixture/action", "IS_PRERELEASE": classification},
+             "GITHUB_REPOSITORY": "fixture/action",
+             "IS_PRERELEASE": "false" if classification == "missing-notes" else classification},
     )
     if classification not in {"true", "false"}:
         assert result.returncode != 0
         assert not arguments.exists()
+        if classification == "missing-notes":
+            assert "CHANGELOG.md has no notes for v9.9.9" in result.stderr
         return
     assert result.returncode == 0, result.stderr
     args = json.loads(arguments.read_text())
@@ -137,6 +147,13 @@ def test_draft_marks_only_release_candidates_as_prereleases(tmp_path, classifica
     assert "--draft" in args
     assert ("--prerelease" in args) is (classification == "true")
     assert ("--latest=false" in args) is (classification == "true")
+    if classification == "false":
+        assert "--notes-file" in args
+        assert "Stable release notes." in (release / "release-notes.md").read_text()
+        assert "RC notes." not in (release / "release-notes.md").read_text()
+        assert "--generate-notes" not in args
+    else:
+        assert "--generate-notes" in args
     assert args[-3:] == ["maida-assert.tar.gz", "SHA256SUMS", "provenance.jsonl"]
 
 

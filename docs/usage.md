@@ -4,11 +4,11 @@
 
 The report shows a pass/fail/inconclusive verdict, top behavior changes and failed checks grouped by stable reason code, with concise next steps. Workflow reruns update the existing Maida marker comment in place. The local `maida accept --reason ...` path is for reviewed intentional changes.
 
-Blocking and acceptance features require a coordinated Action revision. Pin a reviewed full SHA and apply the repository settings below, including when using `maida init --github`.
+Blocking and acceptance features are included in Action `v0.6.0`. Pin a reviewed full SHA and apply the repository settings below, including when using `maida init --github`.
 
 ## Read your first report
 
-The coordinated Action revision adds **Next safe action** to the named check, PR report and workflow summary. The workflow summary remains available when setup fails before a report can be published. These additions are not part of legacy `v5`.
+Action `v0.6.0` adds **Next safe action** to the named check, PR report and workflow summary. The workflow summary remains available when setup fails before a report can be published.
 
 - **PASS:** review the observed coverage and confirm the required checks belong to the current PR head; continue your normal correctness and security review.
 - **FAIL:** reproduce the failed check locally and inspect its trace. Fix unintended behavior; accept an intentional baseline change only after reviewing it, then require fresh results on the resulting head.
@@ -46,7 +46,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
@@ -64,7 +64,7 @@ Pass exactly one trace source. An `agent-script` must instrument the agent with 
 | `trace-command` | one trace source | `''` | Trusted shell command that creates exactly one completed Maida run, such as an importer invocation. Do not include secrets in the command. |
 | `baseline` | no | `''` | Path to a baseline JSON file produced by `maida baseline`. If omitted, only the policy is enforced. |
 | `policy` | no | `.maida/policy.yaml` | Repository-relative path, required on the trusted base in blocking mode. |
-| `maida-version` | no | `v0.5.3` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
+| `maida-version` | no | `v0.6.0` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
 | `extra-args` | no | `''` | Report-only CLI overrides (for example, `--trials 5 --max-steps 20`). Blocking mode rejects overrides; edit the base policy through review. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
@@ -154,7 +154,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: my_agent.py
 ```
@@ -184,12 +184,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: examples/my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
-          maida-version: 'v0.5.3'
+          maida-version: 'v0.6.0'
           python-version: '3.12'
           mode: report-only
           extra-args: --trials 5 --max-steps 20
@@ -223,7 +223,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           trace-command: maida import langfuse --trace-id "$LANGFUSE_TRACE_ID"
           baseline: baselines/imported-agent.json
@@ -260,7 +260,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: maida-ai/maida-assert@v5
+      - uses: maida-ai/maida-assert@v0.6.0
         with:
           agent-script: my_agent.py
           baseline: baselines/my_agent.json
@@ -307,7 +307,7 @@ CLI flags passed via `extra-args` override policy values only in report-only mod
 For a quick local check before pushing, install the `maida-ai` package and run the same command the action runs:
 
 ```bash
-uv add "maida-ai>=0.5"
+uv add "maida-ai>=0.6.0"
 
 maida run my_agent.py \
   --baseline baselines/my_agent.json \

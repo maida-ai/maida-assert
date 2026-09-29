@@ -11,7 +11,7 @@ dev = [
     "pyyaml>=6.0.3",
 ]
 maida = [
-    "maida-ai==0.5.3",
+    "maida-ai==0.6.0",
 ]
 e2e = [
     { include-group = "dev" },

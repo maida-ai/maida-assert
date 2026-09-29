@@ -5,8 +5,8 @@
 Follow the [cross-repository compatibility policy](https://github.com/maida-ai/maida/blob/main/CONTRIBUTING.md#versioning-and-compatibility). The Action uses the tested engine’s `MAJOR.MINOR` line and its own `PATCH` number. State the tested engine range in each release; matching numbers alone do not establish compatibility. The `maida-version` input selects the engine independently.
 
 - Full `vMAJOR.MINOR.PATCH` tags are immutable stable releases.
-- Full `vMAJOR.MINOR.PATCHrcN` tags (for example, `v0.6.0rc1`) publish immutable release-candidate artifacts as GitHub prereleases without changing the latest stable release.
-- Before 1.0, advance a minor alias such as `v0.5` only after verifying its release. There is no `v0` alias.
+- Full `vMAJOR.MINOR.PATCHrcN` tags publish immutable release-candidate artifacts as GitHub prereleases without changing the latest stable release.
+- Before 1.0, advance a minor alias such as `v0.6` only after verifying its release. There is no `v0` alias.
 - From 1.0, use moving major aliases. Document migration of the existing legacy `v1` before reusing that name.
 - Alias updates, other prerelease spellings and Python `.postN` tags do not publish release artifacts.
 - Pin a reviewed full commit SHA in production workflows.
@@ -31,7 +31,7 @@ Use `uv lock --upgrade-package NAME` for a deliberate upgrade. Update the `maida
 
 ## Tagged release provenance
 
-The release workflow tests the full stable or release-candidate tag, archives its committed source, and creates a draft GitHub release containing `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before creating the draft. Both stable and release-candidate tags remain drafts until you review the tag, notes, assets and provenance and manually publish the release; immutable release protection takes effect on publication. Release candidates use the same checks and provenance as stable releases, with GitHub's prerelease flag and `latest=false`. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
+The release workflow tests the full stable or release-candidate tag, archives its committed source, and creates a draft GitHub release containing `maida-assert.tar.gz`, `SHA256SUMS`, and `provenance.jsonl`. It verifies the attestation against the workflow, source commit and tag before creating the draft. Stable draft notes come from the matching `CHANGELOG.md` section; release candidates use generated notes. Both stable and release-candidate tags remain drafts until you review the tag, notes, assets and provenance and manually publish the release; immutable release protection takes effect on publication. Release candidates use the same checks and provenance as stable releases, with GitHub's prerelease flag and `latest=false`. Protect release tags and require review of the release workflow; do not overwrite full tags or existing releases.
 
 To verify an archive, set its reviewed tag and commit, then run in an empty directory:
 
@@ -65,7 +65,7 @@ MAIDA_E2E_STICKY_PATH=/tmp/maida-sticky-comment MAIDA_E2E_SCAFFOLD_PATH=../maida
 
 The local tests exercise verdicts, PR comments, trusted base policy, acceptance and dispatch using a temporary consumer repo and loopback GitHub fixtures. Agents are simulated; no model or external API calls occur after setup. Review `consumer/comment.actual.md` before updating report snapshots.
 
-With the parameterized `init` generator, the suite also installs a real local-wheel dependency into separate temporary Python environments for the gate and acceptance capture, including repositories with a tools-only `pyproject.toml` and `requirements.txt`. It consumes the generated entrypoint and baseline paths and stays offline. The older generator pinned in CI predates dependency setup, so those cases explicitly skip there; update the reviewed generator pin after the coordinated core change is available remotely.
+With the v0.6.0 parameterized `init` generator pinned in CI, the suite also installs a real local-wheel dependency into separate temporary Python environments for the gate and acceptance capture, including repositories with a tools-only `pyproject.toml` and `requirements.txt`. It consumes the generated entrypoint and baseline paths and stays offline.
 
 Require **Action end-to-end** in this repository’s branch protection. The weekly/manual report-only smoke tests runner installation and check publication with a simulated agent, a five-minute timeout and $0 model spend. It does not test live PR comments or merge protection.
 

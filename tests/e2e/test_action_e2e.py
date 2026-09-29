@@ -100,6 +100,7 @@ def test_inconclusive_blocks_and_never_printed_as_pass(consumer):
         "maida-report.json",
         "--out",
         "baseline.json",
+        "--force",
     )
     (consumer.root / "policy.yaml").write_text(
         "version: 2.1\ntrials: 2\nmetrics:\n"
@@ -332,7 +333,7 @@ def test_candidate_cannot_weaken_its_evaluation(consumer, change):
         (consumer.root / "policy.yaml").unlink()
     else:
         consumer.run("python", "agent.py")
-        consumer.run("maida", "baseline", "--out", "baseline.json")
+        consumer.run("maida", "baseline", "--out", "baseline.json", "--force")
     consumer.run("git", "add", "policy.yaml", "baseline.json")
     consumer.run("git", "commit", "-m", "Candidate configuration change")
     consumer.update_head()

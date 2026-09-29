@@ -27,7 +27,7 @@ The Action copies trusted policy and baseline files into temporary runner storag
 
 ## Dependency integrity
 
-Third-party Actions use full SHA pins. Pin this Action to a reviewed SHA too; `@v5` and `@main` are discovery references.
+Third-party Actions use full SHA pins. Pin this Action to a reviewed SHA too; version tags are discovery references.
 
 Default engine installation exports the `maida` group from `uv.lock` offline, then installs exact versions with hashes and binary wheels only. A stale lock stops installation. Explicit `maida-version` overrides warn that they bypass the lock. The lock does not cover packages already present in the consumer environment.
 

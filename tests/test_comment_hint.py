@@ -26,7 +26,7 @@ def test_accept_hint_preserves_literal_command_only_for_failure(tmp_path, verdic
             "BASELINE": "baseline.json",
             "POLICY": "policy.yaml",
             "EXTRA_ARGS": "",
-            "MAIDA_VERSION": "v0.5.3",
+            "MAIDA_VERSION": "v0.6.0",
             "ACCEPT_COMMAND_ENABLED": "true",
             "MODE": "report-only",
             "VERDICT": verdict,

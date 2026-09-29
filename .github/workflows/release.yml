@@ -67,10 +67,26 @@ jobs:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           IS_PRERELEASE: ${{ steps.archive.outputs.prerelease }}
         run: |
-          release_flags=(--draft --verify-tag --generate-notes)
+          release_flags=(--draft --verify-tag)
           case "$IS_PRERELEASE" in
-            true) release_flags+=(--prerelease --latest=false) ;;
-            false) ;;
+            true) release_flags+=(--prerelease --latest=false --generate-notes) ;;
+            false)
+              notes_file="$RUNNER_TEMP/release/release-notes.md"
+              awk -v heading="## $GITHUB_REF_NAME" '
+                $0 == heading { found = 1; next }
+                found && /^## / { exit }
+                found { print }
+                END { if (!found) exit 2 }
+              ' "$GITHUB_WORKSPACE/CHANGELOG.md" > "$notes_file" || {
+                echo "::error::CHANGELOG.md has no notes for $GITHUB_REF_NAME." >&2
+                exit 2
+              }
+              if [ ! -s "$notes_file" ]; then
+                echo "::error::CHANGELOG.md has empty notes for $GITHUB_REF_NAME." >&2
+                exit 2
+              fi
+              release_flags+=(--notes-file "$notes_file")
+              ;;
             *) echo '::error::Missing or invalid release classification.' >&2; exit 2 ;;
           esac
           cp "$ATTESTATION_BUNDLE" "$RUNNER_TEMP/release/provenance.jsonl"
