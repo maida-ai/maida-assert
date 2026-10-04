@@ -56,6 +56,8 @@ Pass exactly one trace source. An `agent-script` must instrument the agent with 
 
 ### Inputs
 
+Defaults below describe the current unreleased checkout. Published Action `v0.6.0` still defaults to Maida `v0.6.0`; selecting `maida-version: v0.6.1` explicitly bypasses that release's dependency lock. Use the same engine override for the gate and acceptance capture.
+
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `mode` | no | `blocking` | `blocking` evaluates the trusted PR base policy; `report-only` observes candidate configuration and never authorizes merging. |
@@ -64,7 +66,7 @@ Pass exactly one trace source. An `agent-script` must instrument the agent with 
 | `trace-command` | one trace source | `''` | Trusted shell command that creates exactly one completed Maida run, such as an importer invocation. Do not include secrets in the command. |
 | `baseline` | no | `''` | Path to a baseline JSON file produced by `maida baseline`. If omitted, only the policy is enforced. |
 | `policy` | no | `.maida/policy.yaml` | Repository-relative path, required on the trusted base in blocking mode. |
-| `maida-version` | no | `v0.6.0` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
+| `maida-version` | no | `v0.6.1` | Version of Maida to install. Use `v<version>` for PyPI or `@<ref>` to track a branch of the [`maida`](https://github.com/maida-ai/maida) repository. |
 | `python-version` | no | `3.12` | Python version passed to `actions/setup-python`. |
 | `extra-args` | no | `''` | Report-only CLI overrides (for example, `--trials 5 --max-steps 20`). Blocking mode rejects overrides; edit the base policy through review. |
 | `post-comment` | no | `true` | When `true` and the workflow runs on a `pull_request` event, the Markdown report is posted as a sticky PR comment. |
@@ -189,7 +191,7 @@ jobs:
           agent-script: examples/my_agent.py
           baseline: baselines/my_agent.json
           policy: .maida/policy.yaml
-          maida-version: 'v0.6.0'
+          maida-version: 'v0.6.1'
           python-version: '3.12'
           mode: report-only
           extra-args: --trials 5 --max-steps 20
@@ -307,7 +309,7 @@ CLI flags passed via `extra-args` override policy values only in report-only mod
 For a quick local check before pushing, install the `maida-ai` package and run the same command the action runs:
 
 ```bash
-uv add "maida-ai>=0.6.0"
+uv add "maida-ai>=0.6.1"
 
 maida run my_agent.py \
   --baseline baselines/my_agent.json \

@@ -93,6 +93,6 @@ jobs:
         with:
           agent-script: examples/ci_dummy_agent.py
           policy: .maida/policy.yaml
-          maida-version: 'v0.6.0'
+          maida-version: 'v0.6.1'
           mode: ${{ github.event_name == 'pull_request' && 'blocking' || 'report-only' }}
           post-comment: 'true'

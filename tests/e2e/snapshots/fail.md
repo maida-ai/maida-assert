@@ -67,7 +67,7 @@ The `maida view <id>` command in this report refers to this CI job's trace store
 From this PR checkout, record a fresh local run and rerun the same assertion inputs:
 
 ```bash
-python -m pip install maida-ai==0.6.0
+python -m pip install maida-ai==0.6.1
 MAIDA_REPRO_DIR=$(mktemp -d)
 git show <base-sha>:policy.yaml > "$MAIDA_REPRO_DIR/policy.yaml"
 git show <base-sha>:baseline.json > "$MAIDA_REPRO_DIR/baseline.json"
