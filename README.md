@@ -7,7 +7,7 @@ Maida runs your traced AI agent in CI, compares its behavior with a baseline and
 Start with the released CLI and inspect one failed check before configuring CI:
 
 ```bash
-uv tool install "maida-ai==0.6.0"
+uv tool install "maida-ai==0.6.1"
 maida demo --regression
 ```
 
@@ -17,7 +17,9 @@ For a Python tool-calling agent, follow the [Python setup path](https://github.c
 
 ## Add CI after the local check works
 
-Use the full `v0.6.0` Action tag after the release is published. For production workflows, pin its reviewed full commit SHA. Before enabling a required gate, complete the [consumer verification](docs/acceptance.md#verify-the-actual-post-accept-loop) for the pinned revision.
+Use the released `v0.6.0` Action tag. For production workflows, pin its reviewed full commit SHA. Before enabling a required gate, complete the [consumer verification](docs/acceptance.md#verify-the-actual-post-accept-loop) for the pinned revision.
+
+The current checkout defaults to hash-locked Maida `v0.6.1`; this engine sync is unreleased and will be bundled into a future Action release. The published Action `v0.6.0` still defaults to Maida `v0.6.0`. To use Maida `v0.6.1` with that released Action, set `maida-version: v0.6.1` on both the gate and acceptance capture; this explicit override bypasses the released dependency lock and emits a warning.
 
 For the Python integration, instrument your agent with `@trace` or `traced_run()`, install its project dependencies in the workflow, and check in `.maida/policy.yaml` and any baseline on the base branch. See the [setup reference](docs/usage.md#usage) for inputs and the [local gate commands](docs/usage.md#running-the-maida-statistical-gate-locally) for creating and reviewing a baseline.
 

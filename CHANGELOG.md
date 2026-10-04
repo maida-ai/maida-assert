@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Synchronize the engine contract, hash-locked Maida dependency, gate and acceptance capture defaults, CI generator pin, and current documentation with Maida `v0.6.1`. The Action remains independently versioned; existing `v0.6.0` Action tags are unchanged, and this sync is reserved for a future bundled release.
+
 ## v0.6.0
 
 This release consolidates the v0.6.0 release candidate into the first stable 0.6 Action. It targets `maida-ai==0.6.0` on Python 3.12–3.14. Pin the Action's reviewed full commit SHA in production workflows; `@v0.6.0` identifies this release once its GitHub release is published.
