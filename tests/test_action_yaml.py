@@ -364,7 +364,10 @@ def test_readme_starts_with_released_coding_agent_route_before_workflow_referenc
     assert f'uv tool install "maida-ai=={selected}"' in first_command
     assert "cd my-repo" in first_command
     assert first_command.index("maida init") < first_command.index("maida check")
-    assert first_command.index("maida check") < first_command.index("maida view <TRACE_ID>")
+    assert first_command.index("maida check") < first_command.index('exact "View:" command')
+    assert "maida view 83aa19e3" in readme
+    for block in re.findall(r"```bash\n(.*?)```", readme, re.S):
+        assert not re.search(r"<[A-Z][A-Z_]*>", block)
     assert "Claude Code task" in first_command
     assert "3 active checks passed" in readme
     assert readme[:readme.index("```bash")].count("\n") < 40

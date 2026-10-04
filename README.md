@@ -15,11 +15,12 @@ maida init
 # Run one normal Claude Code task and exit the session.
 
 maida check
-# Follow the printed:
-maida view <TRACE_ID>
+# Then run the exact "View:" command printed by Maida.
 ```
 
 Approve setup and start a new agent session. **Success looks like `3 active checks passed`**, your task's trace ID, and its viewer command. If Maida is already in the project's uv environment, prefix its commands with `uv run`; plain `claude` works afterward. No tutorial clone is needed.
+
+For example: `maida view 83aa19e3`. Use the command from your own report.
 
 **Runs on your machine or CI runner. No Maida cloud account required.** Task evidence is not uploaded to Maida. Enabling this Action publishes the selected report to your GitHub repository; your agent's normal provider calls remain separate.
 
@@ -80,7 +81,7 @@ Follow the [required repository settings](docs/usage.md#blocking-mode-and-requir
 
 ## Investigate and accept a change
 
-The PR report names failed checks and changes against the baseline. Reproduce the task locally and follow `maida view <TRACE_ID>` from your local report; a CI trace ID is not automatically on your machine. Repair an unintended regression. Accept an intentional baseline or configuration change only after reviewing its evidence and reason, then require a fresh result on the resulting commit.
+The PR report names failed checks and changes against the baseline. Reproduce the task locally and run the exact `View:` command printed in your local report; a CI trace ID is not automatically on your machine. Repair an unintended regression. Accept an intentional baseline or configuration change only after reviewing its evidence and reason, then require a fresh result on the resulting commit.
 
 ## Reference
 
