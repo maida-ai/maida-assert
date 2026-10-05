@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import tomllib
 
 import yaml
@@ -360,11 +361,34 @@ def test_readme_starts_with_released_coding_agent_route_before_workflow_referenc
     readme = README_PATH.read_text()
     first_command = readme.split("```bash\n", 1)[1].split("```", 1)[0]
     selected = _load_action()["inputs"]["maida-version"]["default"].removeprefix("v")
-    assert first_command == f'uv tool install "maida-ai=={selected}"\nmaida demo --regression\n'
+    assert f'uv tool install "maida-ai=={selected}"' in first_command
+    assert "cd my-repo" in first_command
+    assert first_command.index("maida init") < first_command.index("maida check")
+    assert first_command.index("maida check") < first_command.index('exact "View:" command')
+    assert "maida view 83aa19e3" in readme
+    for block in re.findall(r"```bash\n(.*?)```", readme, re.S):
+        assert not re.search(r"<[A-Z][A-Z_]*>", block)
+    assert "Claude Code task" in first_command
+    assert "3 active checks passed" in readme
+    assert readme[:readme.index("```bash")].count("\n") < 40
     assert "https://maida.ai/docs/getting-started/" in readme
     assert "maida-tutorials/blob/main/guides/coding-agent.md" in readme
     assert readme.index("coding-agent getting started guide") < readme.index("```yaml")
-    assert _release_ref() in readme
+    assert "## Protect the next agent change" in readme
+    assert "$15" in readme and "VIP" in readme
+    for obsolete in ("unreleased", "wheel from main", "install_capture", "MAIDA_DATA_DIR", "--expect-status", "--no-loops", "--no-guardrails"):
+        assert obsolete not in readme
+    assert set(re.findall(r"maida-ai==([\d.]+)", readme)) == {selected}
+    assert set(re.findall(r"Maida (?:v)?(\d+\.\d+\.\d+)", readme)) == {selected}
+    for reference in re.findall(r"maida-ai/maida-assert@[^\s`]+", readme):
+        assert re.fullmatch(r"maida-ai/maida-assert@[0-9a-f]{40}", reference)
+    for block in _documentation_yaml_blocks()[:1]:
+        # The README's executable example uses an immutable release revision
+        # and explicitly selects the same engine the developer used locally.
+        steps = yaml.safe_load(block)["jobs"]["agent-check"]["steps"]
+        action = next(step for step in steps if step.get("uses", "").startswith("maida-ai/maida-assert@"))
+        assert re.fullmatch(r"maida-ai/maida-assert@[0-9a-f]{40}", action["uses"])
+        assert action["with"]["maida-version"] == f"v{selected}"
 
 
 def test_documentation_workflows_use_current_action_version():
