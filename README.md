@@ -2,6 +2,8 @@
 
 **Check an agent change before merge.** Tests may say the answer or result looks fine while the agent's execution behavior regressed. After you have proved that distinction locally, this Action brings the reviewed checks into the PR and shows **PASS, FAIL, or INCONCLUSIVE** to reviewers.
 
+This core product repository owns Maida's GitHub boundary. It wraps the [Maida engine and CLI](https://github.com/maida-ai/maida); [maida-tutorials](https://github.com/maida-ai/maida-tutorials) owns the canonical runnable experience.
+
 ## Start with a useful local report
 
 If you have not checked your coding agent yet, use the [coding-agent getting started guide](https://maida.ai/docs/getting-started/) first. With Python 3.12–3.14 and Claude Code in your own Git repository:
